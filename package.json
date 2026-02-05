@@ -2,7 +2,7 @@
     "name": "auto-accept-agent",
     "displayName": "Personal Accept",
     "description": "Customized auto-accept for Antigravity (Windows Personalized).",
-    "version": "8.6.0",
+    "version": "8.7.0",
     "publisher": "MunKhin",
     "icon": "media/icon.png",
     "repository": {
@@ -49,6 +49,7 @@
         ]
     },
     "dependencies": {
+        "@vscode/vsce": "^3.7.1",
         "ws": "^8.13.0"
     },
     "devDependencies": {
