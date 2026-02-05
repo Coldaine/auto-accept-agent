@@ -335,7 +335,19 @@
         const ide = state.currentMode || 'cursor';
         let panel = null;
         if (ide === 'antigravity') {
-            panel = queryAll('#antigravity\\.agentPanel').find(p => p.offsetWidth > 50);
+            const panelSelectors = [
+                '#antigravity\\.agentPanel',
+                '[class*="agentPanel"]',
+                '[class*="chat-panel"]',
+                '.auxiliary-bar',
+            ];
+            for (const sel of panelSelectors) {
+                panel = queryAll(sel).find(p => p.offsetWidth > 50);
+                if (panel) {
+                    log(`[Overlay] Found panel using: ${sel}`);
+                    break;
+                }
+            }
         } else {
             panel = queryAll('#workbench\\.parts\\.auxiliarybar').find(p => p.offsetWidth > 50);
         }
@@ -824,8 +836,14 @@
             // Only click if there's NO completion badge (conversation is still working)
             let clicked = 0;
             if (!hasBadge) {
-                // Click accept/run buttons (Antigravity specific selectors)
-                clicked = await performClick(['.bg-ide-button-background']);
+                // Click accept/run buttons (Antigravity specific selectors with fallbacks)
+                const buttonSelectors = [
+                    '.bg-ide-button-background',    // Original Antigravity
+                    'button[class*="accept"]',      // Class contains accept
+                    'button[class*="primary"]',     // Primary buttons
+                    '.monaco-button.primary',       // Monaco primary button
+                ];
+                clicked = await performClick(buttonSelectors);
                 log(`[Loop] Cycle ${cycle}: Clicked ${clicked} accept buttons`);
             } else {
                 log(`[Loop] Cycle ${cycle}: Skipping clicks - conversation is DONE (has badge)`);
@@ -842,7 +860,21 @@
             await new Promise(r => setTimeout(r, 1000));
 
             // Re-query tabs after potential navigation
-            const tabsAfter = queryAll('button.grow');
+            // Try multiple selectors for Antigravity tabs
+            const tabSelectors = [
+                'button.grow',                              // Original
+                '[data-testid*="conversation"]',            // Test ID based
+                '.conversation-tab',                        // Class based
+                'button[class*="conversation"]',            // Partial class match
+            ];
+            let tabsAfter = [];
+            for (const sel of tabSelectors) {
+                tabsAfter = queryAll(sel);
+                if (tabsAfter.length > 0) {
+                    log(`[Loop] Found ${tabsAfter.length} tabs using: ${sel}`);
+                    break;
+                }
+            }
             log(`[Loop] Cycle ${cycle}: Found ${tabsAfter.length} tabs`);
             updateTabNames(tabsAfter);
 
