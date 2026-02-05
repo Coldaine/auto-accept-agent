@@ -3,150 +3,77 @@ var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
 
-// config.js
-var require_config = __commonJS({
-  "config.js"(exports2, module2) {
-    module2.exports = {
-      STRIPE_LINKS: {
-        MONTHLY: "https://buy.stripe.com/7sY00j3eN0Pt9f94549MY0v",
-        YEARLY: "https://buy.stripe.com/3cI3cv5mVaq3crlfNM9MY0u"
-      }
-    };
-  }
-});
-
 // settings-panel.js
 var require_settings_panel = __commonJS({
   "settings-panel.js"(exports2, module2) {
     var vscode2 = require("vscode");
-    var { STRIPE_LINKS } = require_config();
-    var LICENSE_API2 = "https://auto-accept-backend.onrender.com/api";
     var SettingsPanel2 = class _SettingsPanel {
       static currentPanel = void 0;
       static viewType = "autoAcceptSettings";
-      static createOrShow(extensionUri, context, mode = "settings") {
+      static createOrShow(extensionUri, context) {
         const column = vscode2.window.activeTextEditor ? vscode2.window.activeTextEditor.viewColumn : void 0;
         if (_SettingsPanel.currentPanel) {
           _SettingsPanel.currentPanel.panel.reveal(column);
-          _SettingsPanel.currentPanel.updateMode(mode);
+          _SettingsPanel.currentPanel.refresh();
           return;
         }
         const panel = vscode2.window.createWebviewPanel(
           _SettingsPanel.viewType,
-          mode === "prompt" ? "Auto Accept Agent" : "Auto Accept Settings",
+          "Auto Accept Settings",
           column || vscode2.ViewColumn.One,
           {
             enableScripts: true,
-            localResourceRoots: [vscode2.Uri.joinPath(extensionUri, "media")],
             retainContextWhenHidden: true
           }
         );
-        _SettingsPanel.currentPanel = new _SettingsPanel(panel, extensionUri, context, mode);
+        _SettingsPanel.currentPanel = new _SettingsPanel(panel, extensionUri, context);
       }
-      static showUpgradePrompt(context) {
-        _SettingsPanel.createOrShow(context.extensionUri, context, "prompt");
-      }
-      constructor(panel, extensionUri, context, mode) {
+      constructor(panel, extensionUri, context) {
         this.panel = panel;
         this.extensionUri = extensionUri;
         this.context = context;
-        this.mode = mode;
         this.disposables = [];
-        this.update();
         this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
         this.panel.webview.onDidReceiveMessage(
           async (message) => {
             switch (message.command) {
-              case "setFrequency":
-                if (this.isPro()) {
-                  await this.context.globalState.update("auto-accept-frequency", message.value);
-                  vscode2.commands.executeCommand("auto-accept.updateFrequency", message.value);
+              case "setFrequency": {
+                const value = Number(message.value);
+                if (Number.isFinite(value)) {
+                  await this.context.globalState.update("auto-accept-frequency", value);
+                  vscode2.commands.executeCommand("auto-accept.updateFrequency", value);
                 }
                 break;
-              case "getStats":
-                this.sendStats();
-                break;
-              case "getROIStats":
+              }
+              case "getROIStats": {
                 this.sendROIStats();
                 break;
-              case "updateBannedCommands":
-                if (this.isPro()) {
-                  await this.context.globalState.update("auto-accept-banned-commands", message.commands);
-                  vscode2.commands.executeCommand("auto-accept.updateBannedCommands", message.commands);
-                }
+              }
+              case "updateBannedCommands": {
+                const commands = Array.isArray(message.commands) ? message.commands : [];
+                await this.context.globalState.update("auto-accept-banned-commands", commands);
+                vscode2.commands.executeCommand("auto-accept.updateBannedCommands", commands);
+                this.panel.webview.postMessage({ command: "savedOk" });
                 break;
-              case "getBannedCommands":
+              }
+              case "getBannedCommands": {
                 this.sendBannedCommands();
                 break;
-              case "upgrade":
-                this.openUpgrade(message.promoCode);
-                this.startPolling(this.getUserId());
-                break;
-              case "checkPro":
-                this.handleCheckPro();
-                break;
-              case "dismissPrompt":
-                await this.handleDismiss();
-                break;
+              }
             }
           },
           null,
           this.disposables
         );
+        this.refresh();
       }
-      async handleDismiss() {
-        const now = Date.now();
-        await this.context.globalState.update("auto-accept-lastDismissedAt", now);
-        this.dispose();
-      }
-      async handleCheckPro() {
-        const isPro2 = await this.checkProStatus(this.getUserId());
-        if (isPro2) {
-          await this.context.globalState.update("auto-accept-isPro", true);
-          vscode2.window.showInformationMessage("Auto Accept: Pro status verified!");
-          this.update();
-        } else {
-          await this.context.globalState.update("auto-accept-isPro", false);
-          vscode2.window.showWarningMessage("Pro license not found. Standard limits applied.");
-          this.update();
-        }
-      }
-      isPro() {
-        return this.context.globalState.get("auto-accept-isPro", false);
-      }
-      getUserId() {
-        let userId = this.context.globalState.get("auto-accept-userId");
-        if (!userId) {
-          userId = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-            const r = Math.random() * 16 | 0;
-            const v = c === "x" ? r : r & 3 | 8;
-            return v.toString(16);
-          });
-          this.context.globalState.update("auto-accept-userId", userId);
-        }
-        return userId;
-      }
-      openUpgrade(promoCode) {
-      }
-      updateMode(mode) {
-        this.mode = mode;
-        this.panel.title = mode === "prompt" ? "Auto Accept Agent" : "Auto Accept Settings";
-        this.update();
-      }
-      sendStats() {
-        const stats = this.context.globalState.get("auto-accept-stats", {
-          clicks: 0,
-          sessions: 0,
-          lastSession: null
-        });
-        const isPro2 = this.isPro();
-        const frequency = isPro2 ? this.context.globalState.get("auto-accept-frequency", 1e3) : 300;
-        this.panel.webview.postMessage({
-          command: "updateStats",
-          stats,
-          frequency,
-          isPro: isPro2
-        });
+      refresh() {
+        this.panel.webview.html = this.getHtmlContent();
+        setTimeout(() => {
+          this.sendInitialState();
+          this.sendROIStats();
+          this.sendBannedCommands();
+        }, 50);
       }
       async sendROIStats() {
         try {
@@ -155,7 +82,7 @@ var require_settings_panel = __commonJS({
             command: "updateROIStats",
             roiStats
           });
-        } catch (e) {
+        } catch {
         }
       }
       sendBannedCommands() {
@@ -173,519 +100,178 @@ var require_settings_panel = __commonJS({
           "chmod -R 777 /"
         ];
         const bannedCommands2 = this.context.globalState.get("auto-accept-banned-commands", defaultBannedCommands);
-        this.panel.webview.postMessage({
-          command: "updateBannedCommands",
-          bannedCommands: bannedCommands2
-        });
+        this.panel.webview.postMessage({ command: "updateBannedCommands", bannedCommands: bannedCommands2 });
       }
-      update() {
-        this.panel.webview.html = this.getHtmlContent();
-        setTimeout(() => {
-          this.sendStats();
-          this.sendROIStats();
-        }, 100);
+      sendInitialState() {
+        const frequency = this.context.globalState.get("auto-accept-frequency", 750);
+        this.panel.webview.postMessage({ command: "updateFrequency", frequency });
       }
       getHtmlContent() {
-        const isPro2 = this.isPro();
-        const isPrompt = this.mode === "prompt";
-        const userId = this.getUserId();
-        const stripeLinks = {
-          MONTHLY: `${STRIPE_LINKS.MONTHLY}?client_reference_id=${userId}`,
-          YEARLY: `${STRIPE_LINKS.YEARLY}?client_reference_id=${userId}`
-        };
         const css = `
             :root {
-                --bg: #0a0a0c;
-                --card-bg: #121216;
-                --border: rgba(147, 51, 234, 0.2);
-                --border-hover: rgba(147, 51, 234, 0.4);
-                --accent: #9333ea;
-                --accent-soft: rgba(147, 51, 234, 0.1);
-                --green: #22c55e;
-                --green-soft: rgba(34, 197, 94, 0.1);
-                --fg: #ffffff;
-                --fg-dim: rgba(255, 255, 255, 0.6);
-                --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+                --bg: #0b0b10;
+                --card: #13131a;
+                --border: rgba(255,255,255,0.08);
+                --fg: rgba(255,255,255,0.92);
+                --dim: rgba(255,255,255,0.60);
+                --accent: #8b5cf6;
+                --good: #22c55e;
+                --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+                --font: "Segoe UI", system-ui, -apple-system, sans-serif;
             }
-
-            body {
-                font-family: var(--font);
-                background: var(--bg);
-                color: var(--fg);
-                margin: 0;
-                padding: 40px 20px;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                min-height: 100vh;
-            }
-
-            .container {
-                max-width: ${isPrompt ? "500px" : "640px"};
-                width: 100%;
-                display: flex;
-                flex-direction: column;
-                gap: 24px;
-            }
-
-            /* Header Section */
-            .header {
-                text-align: center;
-                margin-bottom: 8px;
-            }
-            .header h1 {
-                font-size: 32px;
-                font-weight: 800;
-                margin: 0;
-                letter-spacing: -0.5px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                gap: 12px;
-            }
-            .pro-badge {
-                background: var(--accent);
-                color: white;
-                font-size: 12px;
-                padding: 4px 8px;
-                border-radius: 4px;
-                font-weight: 800;
-                text-transform: uppercase;
-                letter-spacing: 1px;
-                box-shadow: 0 0 15px rgba(147, 51, 234, 0.4);
-                animation: pulse 2s infinite;
-            }
-            @keyframes pulse {
-                0% { box-shadow: 0 0 0px rgba(147, 51, 234, 0.4); }
-                50% { box-shadow: 0 0 20px rgba(147, 51, 234, 0.6); }
-                100% { box-shadow: 0 0 0px rgba(147, 51, 234, 0.4); }
-            }
-            .subtitle {
-                color: var(--fg-dim);
-                font-size: 14px;
-                margin-top: 8px;
-            }
-
-            /* Sections */
-            .section {
-                background: var(--card-bg);
-                border: 1px solid var(--border);
-                border-radius: 12px;
-                padding: 24px;
-                transition: border-color 0.3s ease;
-            }
-            .section:hover {
-                border-color: var(--border-hover);
-            }
-            .section-label {
-                color: var(--accent);
-                font-size: 11px;
-                font-weight: 800;
-                letter-spacing: 1px;
-                text-transform: uppercase;
-                margin-bottom: 20px;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-
-            /* Impact Grid */
-            .impact-grid {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 16px;
-            }
-            .impact-card {
-                background: rgba(0, 0, 0, 0.2);
-                border: 1px solid rgba(255, 255, 255, 0.03);
-                border-radius: 10px;
-                padding: 20px 12px;
-                text-align: center;
-                transition: transform 0.2s ease;
-            }
-            .impact-card:hover {
-                transform: translateY(-2px);
-            }
-            .stat-val {
-                font-size: 36px;
-                font-weight: 800;
-                line-height: 1;
-                margin-bottom: 8px;
-                font-variant-numeric: tabular-nums;
-            }
-            .stat-label {
-                font-size: 11px;
-                color: var(--fg-dim);
-                font-weight: 600;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-            }
-
-            /* Inputs and Buttons */
-            input[type="range"] {
-                width: 100%;
-                accent-color: var(--accent);
-                height: 6px;
-                border-radius: 3px;
-                background: rgba(255,255,255,0.1);
-            }
-            textarea {
-                width: 100%;
-                min-height: 140px;
-                background: rgba(0,0,0,0.3);
-                border: 1px solid var(--border);
-                border-radius: 8px;
-                color: var(--fg);
-                font-family: 'JetBrains Mono', 'Fira Code', monospace;
-                font-size: 12px;
-                padding: 12px;
-                resize: vertical;
-                outline: none;
-            }
-            textarea:focus { border-color: var(--accent); }
-
-            .btn-primary {
-                background: var(--accent);
-                color: white;
-                border: none;
-                padding: 14px;
-                border-radius: 8px;
-                font-weight: 700;
-                font-size: 14px;
-                cursor: pointer;
-                transition: all 0.2s ease;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                gap: 8px;
-                text-decoration: none;
-            }
-            .btn-primary:hover {
-                filter: brightness(1.2);
-                transform: scale(1.01);
-            }
-            .btn-outline {
-                background: transparent;
-                border: 1px solid var(--border);
-                color: var(--fg);
-                padding: 10px 16px;
-                border-radius: 8px;
-                font-size: 12px;
-                font-weight: 600;
-                cursor: pointer;
-                transition: all 0.2s ease;
-            }
-            .btn-outline:hover {
-                background: var(--accent-soft);
-                border-color: var(--accent);
-            }
-
-            .link-secondary {
-                color: var(--accent);
-                cursor: pointer;
-                text-decoration: none;
-                font-size: 13px;
-                display: block;
-                text-align: center;
-                margin-top: 16px;
-            }
-            .link-secondary:hover { text-decoration: underline; }
-
-            .locked {
-                opacity: 0.5;
-                pointer-events: none;
-                filter: grayscale(1);
-            }
-            .pro-tip {
-                color: var(--accent);
-                font-size: 11px;
-                margin-top: 12px;
-                font-weight: 600;
-            }
-
-            .prompt-card {
-                background: var(--card-bg);
-                border: 1px solid var(--border);
-                border-radius: 12px;
-                padding: 32px;
-                text-align: center;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            }
-            .prompt-title { font-size: 20px; font-weight: 800; margin-bottom: 12px; letter-spacing: -0.5px; }
-            .prompt-text { font-size: 15px; color: var(--fg-dim); line-height: 1.6; margin-bottom: 24px; }
+            body { margin: 0; padding: 24px; font-family: var(--font); background: var(--bg); color: var(--fg); }
+            h1 { margin: 0 0 6px 0; font-size: 22px; }
+            .sub { margin: 0 0 18px 0; color: var(--dim); font-size: 13px; }
+            .grid { display: grid; grid-template-columns: 1fr; gap: 14px; max-width: 760px; }
+            .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+            .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+            .label { font-size: 12px; color: var(--dim); letter-spacing: 0.4px; text-transform: uppercase; }
+            .val { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 700; }
+            input[type="range"] { width: 100%; accent-color: var(--accent); }
+            textarea { width: 100%; min-height: 140px; background: rgba(0,0,0,0.35); border: 1px solid var(--border); border-radius: 8px; padding: 10px; color: var(--fg); font-family: var(--mono); font-size: 12px; outline: none; resize: vertical; }
+            textarea:focus { border-color: rgba(139, 92, 246, 0.6); }
+            .btnRow { display: flex; gap: 10px; margin-top: 10px; }
+            button { cursor: pointer; border-radius: 8px; padding: 10px 12px; border: 1px solid var(--border); background: rgba(255,255,255,0.04); color: var(--fg); font-weight: 600; }
+            button.primary { background: rgba(139, 92, 246, 0.15); border-color: rgba(139, 92, 246, 0.35); }
+            .ok { color: var(--good); font-size: 12px; height: 16px; margin-top: 8px; }
+            .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+            .stat { background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.04); border-radius: 10px; padding: 10px; }
+            .stat .n { font-size: 20px; font-weight: 800; }
+            .stat .k { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.4px; margin-top: 4px; }
+            @media (max-width: 720px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
         `;
-        if (isPrompt) {
-          return `<!DOCTYPE html>
-            <html>
-            <head><style>${css}</style></head>
-            <body>
-                <div class="container">
-                    <div class="prompt-card">
-                        <div style="font-size: 32px; margin-bottom: 20px;">\u23F8\uFE0F</div>
-                        <div class="prompt-title">Workflow Paused</div>
-                        <div class="prompt-text">
-                            Your Antigravity agent is waiting for approval.<br/><br/>
-                            <strong style="color: var(--accent); opacity: 1;">Pro users auto-resume 94% of these interruptions.</strong>
-                        </div>
-                        <a href="${stripeLinks.MONTHLY}" class="btn-primary" style="margin-bottom: 12px;">
-                            \u{1F680} Unlock Auto-Recovery \u2014 $5/mo
-                        </a>
-                        <a href="${stripeLinks.YEARLY}" class="btn-primary" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);">
-                            Annual Plan \u2014 $29/year
-                        </a>
+        return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>${css}</style>
+</head>
+<body>
+  <h1>Auto Accept Settings</h1>
+  <p class="sub">Local-only settings. No accounts, no licensing, no external links.</p>
 
-                        <a class="link-secondary" onclick="dismiss()" style="margin-top: 24px; opacity: 0.6;">
-                            Continue manually for now
-                        </a>
-                    </div>
-                </div>
-                <script>
-                    const vscode = acquireVsCodeApi();
-                    function dismiss() {
-                        vscode.postMessage({ command: 'dismissPrompt' });
-                    }
-                </script>
-            </body>
-            </html>`;
-        }
-        return `<!DOCTYPE html>
-        <html>
-        <head><style>${css}</style></head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h1>Auto Accept <span class="pro-badge">Pro</span></h1>
-                    <div class="subtitle">Multi-agent automation for Antigravity & Cursor</div>
-                </div>
+  <div class="grid">
+    <div class="card">
+      <div class="row">
+        <div class="label">Polling Speed</div>
+        <div class="val" id="freqVal">...</div>
+      </div>
+      <div style="margin-top: 10px;">
+        <input id="freq" type="range" min="200" max="3000" step="50" value="750" />
+      </div>
+      <div style="margin-top: 8px; color: var(--dim); font-size: 12px;">
+        Lower = faster auto-accept, higher = less CPU.
+      </div>
+    </div>
 
-                ${!isPro2 ? `
-                <div class="section" style="background: var(--accent-soft); border-color: var(--accent); position: relative; overflow: hidden;">
-                    <div style="position: absolute; top: -20px; right: -20px; font-size: 80px; opacity: 0.05; transform: rotate(15deg);">\u{1F680}</div>
-                    <div class="section-label" style="color: white; margin-bottom: 12px; font-size: 14px;">\u{1F525} Upgrade to Pro</div>
-                    <div style="font-size: 14px; line-height: 1.6; margin-bottom: 24px; color: rgba(255,255,255,0.9);">
-                        Automate up to 5 agents in parallel. Join 500+ devs saving hours every week.
-                    </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                        <a href="${stripeLinks.MONTHLY}" class="btn-primary">
-                            $5 / Month
-                        </a>
-                        <a href="${stripeLinks.YEARLY}" class="btn-primary" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);">
-                            $29 / Year
-                        </a>
-                    </div>
-                </div>
-                ` : ""}
+    <div class="card">
+      <div class="row" style="margin-bottom: 10px;">
+        <div class="label">This Week</div>
+        <div style="color: var(--dim); font-size: 12px;">(resets Sunday)</div>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="n" id="roiClicks">0</div><div class="k">Clicks</div></div>
+        <div class="stat"><div class="n" id="roiTime">0m</div><div class="k">Time Saved</div></div>
+        <div class="stat"><div class="n" id="roiSessions">0</div><div class="k">Sessions</div></div>
+        <div class="stat"><div class="n" id="roiBlocked">0</div><div class="k">Blocked</div></div>
+      </div>
+    </div>
 
-                <div class="section">
-                    <div class="section-label">
-                        <span>\u{1F4CA} IMPACT DASHBOARD</span>
-                        <span style="opacity: 0.4;">Resets Sunday</span>
-                    </div>
-                    <div class="impact-grid">
-                        <div class="impact-card" style="border-bottom: 2px solid var(--green);">
-                            <div class="stat-val" id="roiClickCount" style="color: var(--green);">0</div>
-                            <div class="stat-label">Clicks Saved</div>
-                        </div>
-                        <div class="impact-card">
-                            <div class="stat-val" id="roiTimeSaved">0m</div>
-                            <div class="stat-label">Time Saved</div>
-                        </div>
-                        <div class="impact-card">
-                            <div class="stat-val" id="roiSessionCount">0</div>
-                            <div class="stat-label">Sessions</div>
-                        </div>
-                        <div class="impact-card">
-                            <div class="stat-val" id="roiBlockedCount" style="opacity: 0.4;">0</div>
-                            <div class="stat-label">Blocked</div>
-                        </div>
-                    </div>
-                </div>
+    <div class="card">
+      <div class="row">
+        <div class="label">Banned Commands</div>
+        <div style="color: var(--dim); font-size: 12px;">one pattern per line</div>
+      </div>
+      <div style="margin-top: 10px;">
+        <textarea id="banned" spellcheck="false"></textarea>
+      </div>
+      <div class="btnRow">
+        <button class="primary" id="save">Save</button>
+        <button id="reset">Reset Defaults</button>
+      </div>
+      <div class="ok" id="status"></div>
+    </div>
+  </div>
 
-                <div class="section" id="performanceSection">
-                    <div class="section-label">
-                        <span>\u26A1 Performance Mode</span>
-                        <span class="val-display" id="freqVal" style="color: var(--accent);">...</span>
-                    </div>
-                    <div class="${!isPro2 ? "locked" : ""}">
-                        <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
-                            <span style="font-size: 12px; opacity: 0.5;">Instant</span>
-                            <div style="flex: 1;"><input type="range" id="freqSlider" min="200" max="3000" step="100" value="1000"></div>
-                            <span style="font-size: 12px; opacity: 0.5;">Battery Saving</span>
-                        </div>
-                    </div>
-                    ${!isPro2 ? '<div class="pro-tip">Locked: Pro users get 200ms ultra-low latency mode</div>' : ""}
-                </div>
+<script>
+  const vscode = acquireVsCodeApi();
+  const freq = document.getElementById('freq');
+  const freqVal = document.getElementById('freqVal');
+  const banned = document.getElementById('banned');
+  const save = document.getElementById('save');
+  const reset = document.getElementById('reset');
+  const status = document.getElementById('status');
 
-                <div class="section">
-                    <div class="section-label">\u{1F6E1}\uFE0F Safety Rules</div>
-                    <div style="font-size: 13px; opacity: 0.6; margin-bottom: 16px; line-height: 1.5;">
-                        Patterns that will NEVER be auto-accepted.
-                    </div>
-                    <textarea id="bannedCommandsInput" 
-                        placeholder="rm -rf /&#10;format c:&#10;del /f /s /q"
-                        ${!isPro2 ? "readonly" : ""}></textarea>
-                    
-                    <div class="${!isPro2 ? "locked" : ""}" style="display: flex; gap: 12px; margin-top: 20px;">
-                        <button id="saveBannedBtn" class="btn-primary" style="flex: 2;">
-                            Update Rules
-                        </button>
-                        <button id="resetBannedBtn" class="btn-outline" style="flex: 1;">
-                            Reset
-                        </button>
-                    </div>
-                    <div id="bannedStatus" style="font-size: 12px; margin-top: 12px; text-align: center; height: 18px;"></div>
-                </div>
+  const defaultBannedCommands = ["rm -rf /","rm -rf ~","rm -rf *","format c:","del /f /s /q","rmdir /s /q",":(){:|:&};:","dd if=","mkfs.","> /dev/sda","chmod -R 777 /"];
 
-                <div style="text-align: center; opacity: 0.15; font-size: 10px; padding: 20px 0; letter-spacing: 1px;">
-                    REF: ${userId}
-                </div>
-            </div>
+  function renderFreq(ms) {
+    const s = (ms / 1000).toFixed(2);
+    freqVal.textContent = s + 's (' + ms + 'ms)';
+  }
 
-            <script>
-                const vscode = acquireVsCodeApi();
-                
-                // --- Polling Logic for Real-time Refresh ---
-                function refreshStats() {
-                    vscode.postMessage({ command: 'getStats' });
-                    vscode.postMessage({ command: 'getROIStats' });
-                }
-                
-                // Refresh every 5 seconds while panel is open
-                const refreshInterval = setInterval(refreshStats, 5000);
-                
-                // --- Event Listeners ---
-                const slider = document.getElementById('freqSlider');
-                const valDisplay = document.getElementById('freqVal');
-                
-                if (slider) {
-                    slider.addEventListener('input', (e) => {
-                         const s = (e.target.value/1000).toFixed(1) + 's';
-                         valDisplay.innerText = s;
-                         vscode.postMessage({ command: 'setFrequency', value: e.target.value });
-                    });
-                }
+  freq.addEventListener('input', () => {
+    const ms = Number(freq.value);
+    renderFreq(ms);
+    vscode.postMessage({ command: 'setFrequency', value: ms });
+  });
 
-                const bannedInput = document.getElementById('bannedCommandsInput');
-                const saveBannedBtn = document.getElementById('saveBannedBtn');
-                const resetBannedBtn = document.getElementById('resetBannedBtn');
-                const bannedStatus = document.getElementById('bannedStatus');
+  save.addEventListener('click', () => {
+    const lines = banned.value.split('
+').map(l => l.trim()).filter(Boolean);
+    vscode.postMessage({ command: 'updateBannedCommands', commands: lines });
+  });
 
-                const defaultBannedCommands = ["rm -rf /", "rm -rf ~", "rm -rf *", "format c:", "del /f /s /q", "rmdir /s /q", ":(){:|:&};:", "dd if=", "mkfs.", "> /dev/sda", "chmod -R 777 /"];
+  reset.addEventListener('click', () => {
+    banned.value = defaultBannedCommands.join('
+');
+    vscode.postMessage({ command: 'updateBannedCommands', commands: defaultBannedCommands });
+  });
 
-                if (saveBannedBtn) {
-                    saveBannedBtn.addEventListener('click', () => {
-                        const lines = bannedInput.value.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
-                        vscode.postMessage({ command: 'updateBannedCommands', commands: lines });
-                        bannedStatus.innerText = '\u2713 Safety Rules Updated';
-                        bannedStatus.style.color = 'var(--green)';
-                        setTimeout(() => { bannedStatus.innerText = ''; }, 3000);
-                    });
-                }
+  window.addEventListener('message', (e) => {
+    const msg = e.data;
+    if (!msg || !msg.command) return;
 
-                if (resetBannedBtn) {
-                    resetBannedBtn.addEventListener('click', () => {
-                        bannedInput.value = defaultBannedCommands.join('\\n');
-                        vscode.postMessage({ command: 'updateBannedCommands', commands: defaultBannedCommands });
-                        bannedStatus.innerText = '\u2713 Defaults Restored';
-                        bannedStatus.style.color = 'var(--accent)';
-                        setTimeout(() => { bannedStatus.innerText = ''; }, 3000);
-                    });
-                }
+    if (msg.command === 'updateFrequency') {
+      const ms = Number(msg.frequency || 750);
+      freq.value = String(ms);
+      renderFreq(ms);
+    }
 
-                // --- Fancy Count-up Animation ---
-                function animateCountUp(element, target, duration = 1200, suffix = '') {
-                    const currentVal = parseInt(element.innerText.replace(/[^0-9]/g, '')) || 0;
-                    if (currentVal === target && !suffix) return;
-                    
-                    const startTime = performance.now();
-                    function easeOutExpo(t) { return t === 1 ? 1 : 1 - Math.pow(2, -10 * t); }
-                    
-                    function update(currentTime) {
-                        const elapsed = currentTime - startTime;
-                        const progress = Math.min(elapsed / duration, 1);
-                        const current = Math.round(currentVal + (target - currentVal) * easeOutExpo(progress));
-                        element.innerText = current + suffix;
-                        if (progress < 1) requestAnimationFrame(update);
-                    }
-                    requestAnimationFrame(update);
-                }
-                
-                window.addEventListener('message', e => {
-                    const msg = e.data;
-                    if (msg.command === 'updateStats') {
-                        if (slider && !${!isPro2}) {
-                            slider.value = msg.frequency;
-                            valDisplay.innerText = (msg.frequency/1000).toFixed(1) + 's';
-                        }
-                    }
-                    if (msg.command === 'updateROIStats') {
-                        const roi = msg.roiStats;
-                        if (roi) {
-                            animateCountUp(document.getElementById('roiClickCount'), roi.clicksThisWeek || 0);
-                            animateCountUp(document.getElementById('roiSessionCount'), roi.sessionsThisWeek || 0);
-                            animateCountUp(document.getElementById('roiBlockedCount'), roi.blockedThisWeek || 0);
-                            document.getElementById('roiTimeSaved').innerText = roi.timeSavedFormatted || '0m';
-                        }
-                    }
-                    if (msg.command === 'updateBannedCommands') {
-                        if (bannedInput && msg.bannedCommands) {
-                            bannedInput.value = msg.bannedCommands.join('\\n');
-                        }
-                    }
-                });
+    if (msg.command === 'updateROIStats') {
+      const roi = msg.roiStats || {};
+      document.getElementById('roiClicks').textContent = roi.clicksThisWeek || 0;
+      document.getElementById('roiSessions').textContent = roi.sessionsThisWeek || 0;
+      document.getElementById('roiBlocked').textContent = roi.blockedThisWeek || 0;
+      document.getElementById('roiTime').textContent = roi.timeSavedFormatted || '0m';
+    }
 
-                // Initial load
-                refreshStats();
-                vscode.postMessage({ command: 'getBannedCommands' });
-            </script>
-        </body>
-        </html>`;
+    if (msg.command === 'updateBannedCommands') {
+      const list = Array.isArray(msg.bannedCommands) ? msg.bannedCommands : defaultBannedCommands;
+      banned.value = list.join('
+');
+    }
+
+    if (msg.command === 'savedOk') {
+      status.textContent = 'Saved';
+      setTimeout(() => status.textContent = '', 1800);
+    }
+  });
+
+  // Initial load
+  vscode.postMessage({ command: 'getROIStats' });
+  vscode.postMessage({ command: 'getBannedCommands' });
+</script>
+</body>
+</html>`;
       }
       dispose() {
         _SettingsPanel.currentPanel = void 0;
-        if (this.pollTimer) clearInterval(this.pollTimer);
         this.panel.dispose();
         while (this.disposables.length) {
           const d = this.disposables.pop();
           if (d) d.dispose();
         }
-      }
-      async checkProStatus(userId) {
-        return new Promise((resolve) => {
-          const https = require("https");
-          https.get(`${LICENSE_API2}/verify?userId=${userId}`, (res) => {
-            let data = "";
-            res.on("data", (chunk) => data += chunk);
-            res.on("end", () => {
-              try {
-                const json = JSON.parse(data);
-                resolve(json.isPro === true);
-              } catch (e) {
-                resolve(false);
-              }
-            });
-          }).on("error", () => resolve(false));
-        });
-      }
-      startPolling(userId) {
-        let attempts = 0;
-        const maxAttempts = 60;
-        if (this.pollTimer) clearInterval(this.pollTimer);
-        this.pollTimer = setInterval(async () => {
-          attempts++;
-          if (attempts > maxAttempts) {
-            clearInterval(this.pollTimer);
-            return;
-          }
-          const isPro2 = await this.checkProStatus(userId);
-          if (isPro2) {
-            clearInterval(this.pollTimer);
-            await this.context.globalState.update("auto-accept-isPro", true);
-            vscode2.window.showInformationMessage("Auto Accept: Pro status verified! Thank you for your support.");
-            this.update();
-            vscode2.commands.executeCommand("auto-accept.updateFrequency", 1e3);
-          }
-        }, 5e3);
       }
     };
     module2.exports = { SettingsPanel: SettingsPanel2 };
@@ -4452,27 +4038,53 @@ var require_cdp_handler = __commonJS({
           }));
         });
       }
+      async _evaluateJson(id, expression, fallback) {
+        try {
+          const wrapped = `(() => {
+  try {
+    const v = (${expression});
+    return JSON.stringify(v);
+  } catch (e) {
+    return '';
+  }
+})()`;
+          const res = await this._evaluate(id, wrapped);
+          const value = res?.result?.value;
+          if (!value || typeof value !== "string") return fallback;
+          return JSON.parse(value);
+        } catch (e) {
+          return fallback;
+        }
+      }
       async getStats() {
         const stats = { clicks: 0, blocked: 0, fileEdits: 0, terminalCommands: 0 };
         for (const [id] of this.connections) {
           try {
-            const res = await this._evaluate(id, "JSON.stringify(window.__autoAcceptGetStats ? window.__autoAcceptGetStats() : {})");
-            if (res?.result?.value) {
-              const s = JSON.parse(res.result.value);
-              stats.clicks += s.clicks || 0;
-              stats.blocked += s.blocked || 0;
-              stats.fileEdits += s.fileEdits || 0;
-              stats.terminalCommands += s.terminalCommands || 0;
-            }
+            const s = await this._evaluateJson(id, "window.__autoAcceptGetStats ? window.__autoAcceptGetStats() : {}", {});
+            stats.clicks += s.clicks || 0;
+            stats.blocked += s.blocked || 0;
+            stats.fileEdits += s.fileEdits || 0;
+            stats.terminalCommands += s.terminalCommands || 0;
           } catch (e) {
           }
         }
         return stats;
       }
       async getSessionSummary() {
-        return this.getStats();
+        const summary = { clicks: 0, blocked: 0, fileEdits: 0, terminalCommands: 0 };
+        for (const [id] of this.connections) {
+          const s = await this._evaluateJson(
+            id,
+            "window.__autoAcceptGetSessionSummary ? window.__autoAcceptGetSessionSummary() : (window.__autoAcceptGetStats ? window.__autoAcceptGetStats() : {})",
+            {}
+          );
+          summary.clicks += s.clicks || 0;
+          summary.blocked += s.blocked || 0;
+          summary.fileEdits += s.fileEdits || 0;
+          summary.terminalCommands += s.terminalCommands || 0;
+        }
+        return summary;
       }
-      // Compatibility
       async setFocusState(isFocused) {
         for (const [id] of this.connections) {
           try {
@@ -4485,16 +4097,38 @@ var require_cdp_handler = __commonJS({
         return this.connections.size;
       }
       async getAwayActions() {
-        return 0;
+        let total = 0;
+        for (const [id] of this.connections) {
+          const v = await this._evaluateJson(
+            id,
+            "window.__autoAcceptGetAwayActions ? window.__autoAcceptGetAwayActions() : 0",
+            0
+          );
+          total += Number(v) || 0;
+        }
+        return total;
       }
-      // Placeholder
       async resetStats() {
-        return { clicks: 0, blocked: 0 };
+        const aggregate = { clicks: 0, blocked: 0 };
+        for (const [id] of this.connections) {
+          const s = await this._evaluateJson(
+            id,
+            "window.__autoAcceptResetStats ? window.__autoAcceptResetStats() : { clicks: 0, blocked: 0 }",
+            { clicks: 0, blocked: 0 }
+          );
+          aggregate.clicks += s.clicks || 0;
+          aggregate.blocked += s.blocked || 0;
+        }
+        return aggregate;
       }
-      // Placeholder
       async hideBackgroundOverlay() {
+        for (const [id] of this.connections) {
+          try {
+            await this._evaluate(id, `(() => { const el = document.getElementById('__autoAcceptBgOverlay'); if (el) el.remove(); })()`);
+          } catch (e) {
+          }
+        }
       }
-      // Placeholder
     };
     module2.exports = { CDPHandler };
   }
@@ -4715,24 +4349,20 @@ function getSettingsPanel() {
   return SettingsPanel;
 }
 var GLOBAL_STATE_KEY = "auto-accept-enabled-global";
-var PRO_STATE_KEY = "auto-accept-isPro";
 var FREQ_STATE_KEY = "auto-accept-frequency";
 var BANNED_COMMANDS_KEY = "auto-accept-banned-commands";
 var ROI_STATS_KEY = "auto-accept-roi-stats";
 var SECONDS_PER_CLICK = 5;
-var LICENSE_API = "https://auto-accept-backend.onrender.com/api";
 var INSTANCE_ID = Math.random().toString(36).substring(7);
 var isEnabled = false;
-var isPro = false;
 var isLockedOut = false;
-var pollFrequency = 2e3;
+var pollFrequency = 750;
 var bannedCommands = [];
 var backgroundModeEnabled = false;
 var BACKGROUND_DONT_SHOW_KEY = "auto-accept-background-dont-show";
 var BACKGROUND_MODE_KEY = "auto-accept-background-mode";
 var VERSION_7_0_KEY = "auto-accept-version-7.0-notification-shown";
 var VERSION_8_6_0_KEY = "auto-accept-version-8.6-notification-shown";
-var RELEASY_PROMO_KEY = "auto-accept-releasy-promo-shown";
 var pollTimer;
 var statsCollectionTimer;
 var statusBarItem;
@@ -4764,33 +4394,28 @@ async function activate(context) {
   try {
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     statusBarItem.command = "auto-accept.toggle";
-    statusBarItem.text = "$(sync~spin) Auto Accept: Loading...";
-    statusBarItem.tooltip = "Auto Accept is initializing...";
+    statusBarItem.text = "$(sync~spin) Personal Accept: Initializing...";
+    statusBarItem.tooltip = "Personal Accept is initializing...";
     context.subscriptions.push(statusBarItem);
     statusBarItem.show();
     statusSettingsItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 98);
     statusSettingsItem.command = "auto-accept.openSettings";
-    statusSettingsItem.text = "$(gear)";
-    statusSettingsItem.tooltip = "Auto Accept Settings & Pro Features";
+    statusSettingsItem.text = "$(settings-gear)";
+    statusSettingsItem.tooltip = "Personal Accept Settings";
     context.subscriptions.push(statusSettingsItem);
     statusSettingsItem.show();
     statusBackgroundItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
     statusBackgroundItem.command = "auto-accept.toggleBackground";
-    statusBackgroundItem.text = "$(globe) Background: OFF";
-    statusBackgroundItem.tooltip = "Background Mode (Pro) - Works on all chats";
+    statusBackgroundItem.text = "$(zap) Background: OFF";
+    statusBackgroundItem.tooltip = "Background Mode - Works on all chats";
     context.subscriptions.push(statusBackgroundItem);
-    console.log("Auto Accept: Status bar items created and shown.");
+    console.log("Personal Accept: Status bar items created and shown.");
   } catch (sbError) {
     console.error("CRITICAL: Failed to create status bar items:", sbError);
   }
   try {
     isEnabled = context.globalState.get(GLOBAL_STATE_KEY, false);
-    isPro = context.globalState.get(PRO_STATE_KEY, false);
-    if (isPro) {
-      pollFrequency = context.globalState.get(FREQ_STATE_KEY, 1e3);
-    } else {
-      pollFrequency = 300;
-    }
+    pollFrequency = context.globalState.get(FREQ_STATE_KEY, pollFrequency);
     backgroundModeEnabled = context.globalState.get(BACKGROUND_MODE_KEY, false);
     const defaultBannedCommands = [
       "rm -rf /",
@@ -4807,27 +4432,11 @@ async function activate(context) {
       "chmod -R 777 /"
     ];
     bannedCommands = context.globalState.get(BANNED_COMMANDS_KEY, defaultBannedCommands);
-    verifyLicense(context).then((isValid) => {
-      if (isPro !== isValid) {
-        isPro = isValid;
-        context.globalState.update(PRO_STATE_KEY, isValid);
-        log(`License re-verification: Updated Pro status to ${isValid}`);
-        if (cdpHandler && cdpHandler.setProStatus) {
-          cdpHandler.setProStatus(isValid);
-        }
-        if (!isValid) {
-          pollFrequency = 300;
-          if (backgroundModeEnabled) {
-          }
-        }
-        updateStatusBar();
-      }
-    });
     currentIDE = detectIDE();
-    outputChannel = vscode.window.createOutputChannel("Auto Accept");
+    outputChannel = vscode.window.createOutputChannel("Personal Accept Logs");
     context.subscriptions.push(outputChannel);
-    log(`Auto Accept: Activating...`);
-    log(`Auto Accept: Detected environment: ${currentIDE.toUpperCase()}`);
+    log(`Personal Accept: Activating...`);
+    log(`Personal Accept: Windows Environment detected.`);
     vscode.window.onDidChangeWindowState(async (e) => {
       if (cdpHandler && cdpHandler.setFocusState) {
         await cdpHandler.setFocusState(e.focused);
@@ -4873,27 +4482,14 @@ async function activate(context) {
         } else {
           vscode.window.showErrorMessage("Failed to load Settings Panel.");
         }
-      }),
-      vscode.commands.registerCommand("auto-accept.activatePro", () => handleProActivation(context))
+      })
     );
-    const uriHandler = {
-      handleUri(uri) {
-        log(`URI Handler received: ${uri.toString()}`);
-        if (uri.path === "/activate" || uri.path === "activate") {
-          log("Activation URI detected - verifying pro status...");
-          handleProActivation(context);
-        }
-      }
-    };
-    context.subscriptions.push(vscode.window.registerUriHandler(uriHandler));
-    log("URI Handler registered for activation deep links.");
     try {
       await checkEnvironmentAndStart();
     } catch (err) {
       log(`Error in environment check: ${err.message}`);
     }
     showVersionNotification(context);
-    showReleasyCrossPromo(context);
     log("Auto Accept: Activation complete");
   } catch (error) {
     console.error("ACTIVATION CRITICAL FAILURE:", error);
@@ -4988,10 +4584,6 @@ async function handleFrequencyUpdate(context, freq) {
   }
 }
 async function handleBannedCommandsUpdate(context, commands) {
-  if (!isPro) {
-    log("Banned commands customization requires Pro");
-    return;
-  }
   bannedCommands = Array.isArray(commands) ? commands : [];
   await context.globalState.update(BANNED_COMMANDS_KEY, bannedCommands);
   log(`Banned commands updated: ${bannedCommands.length} patterns`);
@@ -5004,18 +4596,6 @@ async function handleBannedCommandsUpdate(context, commands) {
 }
 async function handleBackgroundToggle(context) {
   log("Background toggle clicked");
-  if (!isPro) {
-    vscode.window.showInformationMessage(
-      "Background Mode is a Pro feature.",
-      "Learn More"
-    ).then((choice) => {
-      if (choice === "Learn More") {
-        const panel = getSettingsPanel();
-        if (panel) panel.createOrShow(context.extensionUri, context);
-      }
-    });
-    return;
-  }
   const dontShowAgain = context.globalState.get(BACKGROUND_DONT_SHOW_KEY, false);
   if (!dontShowAgain && !backgroundModeEnabled) {
     const choice = await vscode.window.showInformationMessage(
@@ -5056,7 +4636,7 @@ async function syncSessions() {
     log(`CDP: Syncing sessions (Mode: ${backgroundModeEnabled ? "Background" : "Simple"})...`);
     try {
       await cdpHandler.start({
-        isPro,
+        isPro: true,
         isBackgroundMode: backgroundModeEnabled,
         pollInterval: pollFrequency,
         ide: currentIDE,
@@ -5145,7 +4725,7 @@ async function showWeeklySummaryNotification(context, lastWeekStats) {
   } else {
     timeStr = `${timeSavedMinutes} minutes`;
   }
-  const message = `\u{1F4CA} Last week, Auto Accept saved you ${timeStr} by auto-clicking ${lastWeekStats.clicksThisWeek} buttons!`;
+  const message = `\u{1F4CA} Last week, Personal Accept saved you ${timeStr} by auto-clicking ${lastWeekStats.clicksThisWeek} buttons!`;
   let detail = "";
   if (lastWeekStats.sessionsThisWeek > 0) {
     detail += `Recovered ${lastWeekStats.sessionsThisWeek} stuck sessions. `;
@@ -5185,7 +4765,7 @@ async function showSessionSummaryNotification(context, summary) {
   }
   const message = lines.join("\n");
   vscode.window.showInformationMessage(
-    `\u{1F916} Auto Accept: ${summary.clicks} actions handled this session`,
+    `\u{1F916} Personal Accept: ${summary.clicks} actions handled this session`,
     { detail: message },
     "View Stats"
   ).then((choice) => {
@@ -5202,7 +4782,7 @@ async function showAwayActionsNotification(context, actionsCount) {
     return;
   }
   log(`[Notification] Showing away actions notification for ${actionsCount} actions`);
-  const message = `\u{1F680} Auto Accept handled ${actionsCount} action${actionsCount > 1 ? "s" : ""} while you were away.`;
+  const message = `\u{1F680} Personal Accept handled ${actionsCount} action${actionsCount > 1 ? "s" : ""} while you were away.`;
   const detail = `Agents stayed autonomous while you focused elsewhere.`;
   vscode.window.showInformationMessage(
     message,
@@ -5269,160 +4849,43 @@ function startStatsCollection(context) {
 function updateStatusBar() {
   if (!statusBarItem) return;
   if (isEnabled) {
-    let statusText = "ON";
-    let tooltip = `Auto Accept is running.`;
+    let statusText = "ACTIVE";
+    let tooltip = `Personal Accept is running.`;
     let bgColor = void 0;
-    let icon = "$(check)";
+    let icon = "$(pass-filled)";
     const cdpConnected = cdpHandler && cdpHandler.getConnectionCount() > 0;
     if (cdpConnected) {
-      tooltip += " (CDP Connected)";
+      tooltip += " (Connected to IDE)";
+      icon = "$(zap)";
     }
     if (isLockedOut) {
-      statusText = "PAUSED (Multi-window)";
+      statusText = "PAUSED (Other Instance)";
       bgColor = new vscode.ThemeColor("statusBarItem.warningBackground");
-      icon = "$(sync~spin)";
+      icon = "$(lock)";
     }
-    statusBarItem.text = `${icon} Auto Accept: ${statusText}`;
+    statusBarItem.text = `${icon} Personal Accept: ${statusText}`;
     statusBarItem.tooltip = tooltip;
     statusBarItem.backgroundColor = bgColor;
     if (statusBackgroundItem) {
       if (backgroundModeEnabled) {
-        statusBackgroundItem.text = "$(sync~spin) Background: ON";
-        statusBackgroundItem.tooltip = "Background Mode is on. Click to turn off.";
+        statusBackgroundItem.text = "$(pulse) Background: ON";
+        statusBackgroundItem.tooltip = "Background Mode is tracking all tabs. Click to disable.";
         statusBackgroundItem.backgroundColor = void 0;
       } else {
-        statusBackgroundItem.text = "$(globe) Background: OFF";
-        statusBackgroundItem.tooltip = "Click to turn on Background Mode (works on all your chats).";
+        statusBackgroundItem.text = "$(zap) Background: OFF";
+        statusBackgroundItem.tooltip = "Click to enable Background Mode.";
         statusBackgroundItem.backgroundColor = void 0;
       }
       statusBackgroundItem.show();
     }
   } else {
-    statusBarItem.text = "$(circle-slash) Auto Accept: OFF";
-    statusBarItem.tooltip = "Click to enable Auto Accept.";
-    statusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
+    statusBarItem.text = "$(circle-slash) Personal Accept: OFF";
+    statusBarItem.tooltip = "Click to enable Personal Accept (Windows Personalized).";
+    statusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
     if (statusBackgroundItem) {
       statusBackgroundItem.hide();
     }
   }
-}
-async function verifyLicense(context) {
-  const userId = context.globalState.get("auto-accept-userId");
-  if (!userId) return false;
-  return new Promise((resolve) => {
-    const https = require("https");
-    https.get(`${LICENSE_API}/check-license?userId=${userId}`, (res) => {
-      let data = "";
-      res.on("data", (chunk) => data += chunk);
-      res.on("end", () => {
-        try {
-          const json = JSON.parse(data);
-          resolve(json.isPro === true);
-        } catch (e) {
-          resolve(false);
-        }
-      });
-    }).on("error", () => resolve(false));
-  });
-}
-async function handleProActivation(context) {
-  log("Pro Activation: Starting verification process...");
-  vscode.window.withProgress(
-    {
-      location: vscode.ProgressLocation.Notification,
-      title: "Auto Accept: Verifying Pro status...",
-      cancellable: false
-    },
-    async (progress) => {
-      progress.report({ increment: 30 });
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      progress.report({ increment: 30 });
-      const isProNow = await verifyLicense(context);
-      progress.report({ increment: 40 });
-      if (isProNow) {
-        isPro = true;
-        await context.globalState.update(PRO_STATE_KEY, true);
-        if (cdpHandler && cdpHandler.setProStatus) {
-          cdpHandler.setProStatus(true);
-        }
-        pollFrequency = context.globalState.get(FREQ_STATE_KEY, 1e3);
-        if (isEnabled) {
-          await syncSessions();
-        }
-        updateStatusBar();
-        log("Pro Activation: SUCCESS - User is now Pro!");
-        vscode.window.showInformationMessage(
-          "\u{1F389} Pro Activated! Thank you for your support. All Pro features are now unlocked.",
-          "Open Dashboard"
-        ).then((choice) => {
-          if (choice === "Open Dashboard") {
-            const panel = getSettingsPanel();
-            if (panel) panel.createOrShow(context.extensionUri, context);
-          }
-        });
-      } else {
-        log("Pro Activation: License not found yet. Starting background polling...");
-        startProPolling(context);
-      }
-    }
-  );
-}
-var proPollingTimer = null;
-var proPollingAttempts = 0;
-var MAX_PRO_POLLING_ATTEMPTS = 24;
-function startProPolling(context) {
-  if (proPollingTimer) {
-    clearInterval(proPollingTimer);
-  }
-  proPollingAttempts = 0;
-  log("Pro Polling: Starting background verification (checking every 5s for up to 2 minutes)...");
-  vscode.window.showInformationMessage(
-    "Payment received! Verifying your Pro status... This may take a moment."
-  );
-  proPollingTimer = setInterval(async () => {
-    proPollingAttempts++;
-    log(`Pro Polling: Attempt ${proPollingAttempts}/${MAX_PRO_POLLING_ATTEMPTS}`);
-    if (proPollingAttempts > MAX_PRO_POLLING_ATTEMPTS) {
-      clearInterval(proPollingTimer);
-      proPollingTimer = null;
-      log("Pro Polling: Max attempts reached. User should check manually.");
-      vscode.window.showWarningMessage(
-        'Pro verification is taking longer than expected. Please click "Check Pro Status" in settings, or contact support if the issue persists.',
-        "Open Settings"
-      ).then((choice) => {
-        if (choice === "Open Settings") {
-          const panel = getSettingsPanel();
-          if (panel) panel.createOrShow(context.extensionUri, context);
-        }
-      });
-      return;
-    }
-    const isProNow = await verifyLicense(context);
-    if (isProNow) {
-      clearInterval(proPollingTimer);
-      proPollingTimer = null;
-      isPro = true;
-      await context.globalState.update(PRO_STATE_KEY, true);
-      if (cdpHandler && cdpHandler.setProStatus) {
-        cdpHandler.setProStatus(true);
-      }
-      pollFrequency = context.globalState.get(FREQ_STATE_KEY, 1e3);
-      if (isEnabled) {
-        await syncSessions();
-      }
-      updateStatusBar();
-      log("Pro Polling: SUCCESS - Pro status confirmed!");
-      vscode.window.showInformationMessage(
-        "\u{1F389} Pro Activated! Thank you for your support. All Pro features are now unlocked.",
-        "Open Dashboard"
-      ).then((choice) => {
-        if (choice === "Open Dashboard") {
-          const panel = getSettingsPanel();
-          if (panel) panel.createOrShow(context.extensionUri, context);
-        }
-      });
-    }
-  }, 5e3);
 }
 async function showVersionNotification(context) {
   const hasShown8_6 = context.globalState.get(VERSION_8_6_0_KEY, false);
@@ -5482,37 +4945,6 @@ ${body}`,
   if (selection === btnDashboard) {
     const panel = getSettingsPanel();
     if (panel) panel.createOrShow(context.extensionUri, context);
-  }
-}
-async function showReleasyCrossPromo(context) {
-  const hasShown = context.globalState.get(RELEASY_PROMO_KEY, false);
-  if (hasShown) return;
-  const stats = context.globalState.get(ROI_STATS_KEY, { sessionsThisWeek: 0 });
-  const totalSessions = stats.sessionsThisWeek || 0;
-  if (totalSessions < 3) return;
-  await context.globalState.update(RELEASY_PROMO_KEY, true);
-  const title = "\u{1F389} New from the Auto Accept team";
-  const body = `Releasy AI \u2014 Marketing for Developers
-
-Turn your GitHub commits into Reddit posts automatically.
-
-\u2022 AI analyzes your changes
-\u2022 Generates engaging posts
-\u2022 Auto-publishes to Reddit
-
-Zero effort marketing for your side projects.`;
-  const selection = await vscode.window.showInformationMessage(
-    `${title}
-
-${body}`,
-    { modal: true },
-    "Check it out",
-    "Maybe later"
-  );
-  if (selection === "Check it out") {
-    vscode.env.openExternal(
-      vscode.Uri.parse("https://releasyai.com?utm_source=auto-accept&utm_medium=extension&utm_campaign=version_promo")
-    );
   }
 }
 function deactivate() {

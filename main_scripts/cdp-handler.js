@@ -142,24 +142,55 @@ class CDPHandler {
         });
     }
 
+    async _evaluateJson(id, expression, fallback) {
+        try {
+            const wrapped = `(() => {\n` +
+                `  try {\n` +
+                `    const v = (${expression});\n` +
+                `    return JSON.stringify(v);\n` +
+                `  } catch (e) {\n` +
+                `    return '';\n` +
+                `  }\n` +
+                `})()`;
+            const res = await this._evaluate(id, wrapped);
+            const value = res?.result?.value;
+            if (!value || typeof value !== 'string') return fallback;
+            return JSON.parse(value);
+        } catch (e) {
+            return fallback;
+        }
+    }
+
     async getStats() {
         const stats = { clicks: 0, blocked: 0, fileEdits: 0, terminalCommands: 0 };
         for (const [id] of this.connections) {
             try {
-                const res = await this._evaluate(id, 'JSON.stringify(window.__autoAcceptGetStats ? window.__autoAcceptGetStats() : {})');
-                if (res?.result?.value) {
-                    const s = JSON.parse(res.result.value);
-                    stats.clicks += s.clicks || 0;
-                    stats.blocked += s.blocked || 0;
-                    stats.fileEdits += s.fileEdits || 0;
-                    stats.terminalCommands += s.terminalCommands || 0;
-                }
+                const s = await this._evaluateJson(id, 'window.__autoAcceptGetStats ? window.__autoAcceptGetStats() : {}', {});
+                stats.clicks += s.clicks || 0;
+                stats.blocked += s.blocked || 0;
+                stats.fileEdits += s.fileEdits || 0;
+                stats.terminalCommands += s.terminalCommands || 0;
             } catch (e) { }
         }
         return stats;
     }
 
-    async getSessionSummary() { return this.getStats(); } // Compatibility
+    async getSessionSummary() {
+        // Aggregate summaries across connected pages
+        const summary = { clicks: 0, blocked: 0, fileEdits: 0, terminalCommands: 0 };
+        for (const [id] of this.connections) {
+            const s = await this._evaluateJson(
+                id,
+                'window.__autoAcceptGetSessionSummary ? window.__autoAcceptGetSessionSummary() : (window.__autoAcceptGetStats ? window.__autoAcceptGetStats() : {})',
+                {}
+            );
+            summary.clicks += s.clicks || 0;
+            summary.blocked += s.blocked || 0;
+            summary.fileEdits += s.fileEdits || 0;
+            summary.terminalCommands += s.terminalCommands || 0;
+        }
+        return summary;
+    }
     async setFocusState(isFocused) {
         for (const [id] of this.connections) {
             try {
@@ -169,9 +200,42 @@ class CDPHandler {
     }
 
     getConnectionCount() { return this.connections.size; }
-    async getAwayActions() { return 0; } // Placeholder
-    async resetStats() { return { clicks: 0, blocked: 0 }; } // Placeholder
-    async hideBackgroundOverlay() { } // Placeholder
+
+    async getAwayActions() {
+        let total = 0;
+        for (const [id] of this.connections) {
+            const v = await this._evaluateJson(
+                id,
+                'window.__autoAcceptGetAwayActions ? window.__autoAcceptGetAwayActions() : 0',
+                0
+            );
+            total += Number(v) || 0;
+        }
+        return total;
+    }
+
+    async resetStats() {
+        // Collect and reset stats inside each page (weekly aggregation in extension)
+        const aggregate = { clicks: 0, blocked: 0 };
+        for (const [id] of this.connections) {
+            const s = await this._evaluateJson(
+                id,
+                'window.__autoAcceptResetStats ? window.__autoAcceptResetStats() : { clicks: 0, blocked: 0 }',
+                { clicks: 0, blocked: 0 }
+            );
+            aggregate.clicks += s.clicks || 0;
+            aggregate.blocked += s.blocked || 0;
+        }
+        return aggregate;
+    }
+
+    async hideBackgroundOverlay() {
+        for (const [id] of this.connections) {
+            try {
+                await this._evaluate(id, `(() => { const el = document.getElementById('__autoAcceptBgOverlay'); if (el) el.remove(); })()`);
+            } catch (e) { }
+        }
+    }
 }
 
 module.exports = { CDPHandler };

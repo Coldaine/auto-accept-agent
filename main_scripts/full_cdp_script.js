@@ -633,7 +633,7 @@
     function isAcceptButton(el) {
         const text = (el.textContent || "").trim().toLowerCase();
         if (text.length === 0 || text.length > 50) return false;
-        const patterns = ['accept', 'run', 'retry', 'apply', 'execute', 'confirm', 'allow once', 'allow'];
+        const patterns = ['accept', 'run', 'retry', 'apply', 'execute', 'confirm', 'allow once', 'allow', 'resume', 'try again'];
         const rejects = ['skip', 'reject', 'cancel', 'close', 'refine'];
         if (rejects.some(r => text.includes(r))) return false;
         if (!patterns.some(p => text.includes(p))) return false;
@@ -967,7 +967,12 @@
                 log(`Starting static poll loop...`);
                 (async function staticLoop() {
                     while (state.isRunning && state.sessionID === sid) {
-                        performClick(['button', '[class*="button"]', '[class*="anysphere"]']);
+                        const selectors = (ide === 'antigravity')
+                            ? ['.bg-ide-button-background']
+                            : (ide === 'cursor')
+                                ? ['button', '[class*="button"]', '[class*="anysphere"]']
+                                : ['button'];
+                        performClick(selectors);
                         await new Promise(r => setTimeout(r, config.pollInterval || 1000));
                     }
                 })();
