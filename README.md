@@ -4,7 +4,7 @@ Keeps Antigravity conversations moving by automatically clicking approval button
 
 ---
 
-![background mode](https://raw.githubusercontent.com/MunKhin/auto-accept-agent/master/media/background-mode.png)
+![background mode](https://raw.githubusercontent.com/Coldaine/auto-accept-agent/main/media/background-mode.png)
 
 ---
 
@@ -88,10 +88,33 @@ If the status bar says `OFF` or `PAUSED`, verify the CDP bridge:
 
 ---
 
-## Quick Start (Windows)
+## Launch Scripts
 
-- Antigravity or Cursor IDE
-- Enable remote debugging port (one-time setup via provided scripts)
+For convenience, launch scripts are provided in the `scripts/` folder:
+
+### Windows (PowerShell)
+```powershell
+# Launch Antigravity with CDP enabled
+.\scripts\launch-antigravity.ps1
+
+# Launch Cursor instead
+.\scripts\launch-antigravity.ps1 -IDE Cursor
+
+# Use a different port
+.\scripts\launch-antigravity.ps1 -Port 9001
+```
+
+### macOS / Linux (Bash)
+```bash
+# Make executable (first time only)
+chmod +x scripts/launch-antigravity.sh
+
+# Launch Antigravity
+./scripts/launch-antigravity.sh
+
+# Launch Cursor
+./scripts/launch-antigravity.sh cursor
+```
 
 ---
 

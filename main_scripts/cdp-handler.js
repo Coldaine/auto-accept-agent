@@ -84,12 +84,25 @@ class CDPHandler {
     async _connect(id, url) {
         return new Promise((resolve) => {
             const ws = new WebSocket(url);
+
+            // Connection timeout - don't hang forever
+            const connectionTimeout = setTimeout(() => {
+                ws.terminate();
+                this.log(`Connection timeout for ${id}`);
+                resolve(false);
+            }, 5000);
+
             ws.on('open', () => {
+                clearTimeout(connectionTimeout);
                 this.connections.set(id, { ws, injected: false });
                 this.log(`Connected to page ${id}`);
                 resolve(true);
             });
-            ws.on('error', () => resolve(false));
+            ws.on('error', (err) => {
+                clearTimeout(connectionTimeout);
+                this.log(`Connection error for ${id}: ${err.message || 'Unknown error'}`);
+                resolve(false);
+            });
             ws.on('close', () => {
                 this.connections.delete(id);
                 this.log(`Disconnected from page ${id}`);
@@ -122,14 +135,32 @@ class CDPHandler {
 
         return new Promise((resolve, reject) => {
             const currentId = this.msgId++;
-            const timeout = setTimeout(() => reject(new Error('CDP Timeout')), 2000);
+            let onMessage;
 
-            const onMessage = (data) => {
-                const msg = JSON.parse(data.toString());
-                if (msg.id === currentId) {
-                    conn.ws.off('message', onMessage);
-                    clearTimeout(timeout);
-                    resolve(msg.result);
+            // Cleanup function to prevent memory leaks
+            const cleanup = () => {
+                clearTimeout(timeout);
+                if (onMessage) conn.ws.off('message', onMessage);
+            };
+
+            const timeout = setTimeout(() => {
+                cleanup();
+                reject(new Error('CDP Timeout'));
+            }, 2000);
+
+            onMessage = (data) => {
+                try {
+                    const msg = JSON.parse(data.toString());
+                    if (msg.id === currentId) {
+                        cleanup();
+                        // Check for CDP-level errors
+                        if (msg.result?.exceptionDetails) {
+                            this.log(`Evaluation error: ${msg.result.exceptionDetails.text || 'Unknown'}`);
+                        }
+                        resolve(msg.result);
+                    }
+                } catch (e) {
+                    // Ignore malformed messages not intended for us
                 }
             };
 

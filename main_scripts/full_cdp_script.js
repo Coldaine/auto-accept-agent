@@ -284,6 +284,7 @@
     // --- 2. OVERLAY LOGIC ---
     const OVERLAY_ID = '__autoAcceptBgOverlay';
     const STYLE_ID = '__autoAcceptBgStyles';
+    let panelResizeObserver = null; // Track ResizeObserver for cleanup
     const STYLES = `
         #__autoAcceptBgOverlay { position: fixed; background: rgba(0, 0, 0, 0.98); z-index: 2147483647; font-family: sans-serif; color: #fff; display: flex; flex-direction: column; justify-content: center; align-items: center; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
         #__autoAcceptBgOverlay.visible { opacity: 1; }
@@ -346,7 +347,12 @@
                 Object.assign(overlay.style, { top: r.top + 'px', left: r.left + 'px', width: r.width + 'px', height: r.height + 'px' });
             };
             sync();
-            new ResizeObserver(sync).observe(panel);
+            // Clean up any existing observer before creating new one
+            if (panelResizeObserver) {
+                panelResizeObserver.disconnect();
+            }
+            panelResizeObserver = new ResizeObserver(sync);
+            panelResizeObserver.observe(panel);
         } else {
             log('[Overlay] No panel found, using fullscreen');
             Object.assign(overlay.style, { top: '0', left: '0', width: '100%', height: '100%' });
@@ -459,6 +465,13 @@
 
     // Called ONCE when background mode is disabled
     function hideOverlay() {
+        // Clean up ResizeObserver to prevent memory leak
+        if (panelResizeObserver) {
+            panelResizeObserver.disconnect();
+            panelResizeObserver = null;
+            log('[Overlay] ResizeObserver disconnected');
+        }
+
         const overlay = document.getElementById(OVERLAY_ID);
         if (overlay) {
             log('[Overlay] Hiding overlay...');
@@ -633,10 +646,18 @@
     function isAcceptButton(el) {
         const text = (el.textContent || "").trim().toLowerCase();
         if (text.length === 0 || text.length > 50) return false;
-        const patterns = ['accept', 'run', 'retry', 'apply', 'execute', 'confirm', 'allow once', 'allow', 'resume', 'try again'];
-        const rejects = ['skip', 'reject', 'cancel', 'close', 'refine'];
+
+        // Reject patterns - check these first (includes negation patterns)
+        const rejects = ['skip', 'reject', 'cancel', 'close', 'refine', 'decline', 'deny', 'dismiss', "don't", 'do not'];
         if (rejects.some(r => text.includes(r))) return false;
-        if (!patterns.some(p => text.includes(p))) return false;
+
+        // Accept patterns - use word boundaries where practical
+        const patterns = ['accept', 'retry', 'apply', 'execute', 'confirm', 'allow once', 'allow', 'resume', 'try again'];
+        // Special handling for 'run' - avoid matching 'running', 'runtime', etc.
+        const hasRunPattern = /\brun\b/.test(text) || text.includes('run command');
+        const hasOtherPattern = patterns.some(p => text.includes(p));
+
+        if (!hasRunPattern && !hasOtherPattern) return false;
 
         // Check if this is a command execution button by looking for "run command" or similar
         const isCommandButton = text.includes('run command') || text.includes('execute') || text.includes('run');

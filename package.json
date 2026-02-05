@@ -7,7 +7,7 @@
     "icon": "media/icon.png",
     "repository": {
         "type": "git",
-        "url": "https://github.com/MunKhin/auto-accept-agent"
+        "url": "https://github.com/Coldaine/auto-accept-agent"
     },
     "categories": [
         "Machine Learning",

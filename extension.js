@@ -442,8 +442,8 @@ async function startPolling() {
         }
 
         // We are the leader or lock is dead
-        globalContext.globalState.update(lockKey, myId);
-        globalContext.globalState.update(`${lockKey}-ping`, Date.now());
+        await globalContext.globalState.update(lockKey, myId);
+        await globalContext.globalState.update(`${lockKey}-ping`, Date.now());
 
         if (isLockedOut) {
             log('CDP Control: Lock acquired. Resuming control.');
@@ -604,12 +604,14 @@ async function showAwayActionsNotification(context, actionsCount) {
 }
 
 // --- BACKGROUND MODE UPSELL ---
-// Called when free user switches tabs (could have been auto-handled)
+// Called when user switches tabs (could have been auto-handled)
+// Note: This function is currently unused but kept for potential future use
 async function showBackgroundModeUpsell(context) {
-    if (isPro) return; // Already Pro, no upsell
+    // Background mode is now available to all users
+    if (backgroundModeEnabled) return; // Already enabled
 
     const UPSELL_COOLDOWN_KEY = 'auto-accept-bg-upsell-last';
-    const UPSELL_COOLDOWN_MS = 1000 * 60 * 30; // 30 minutes between upsells
+    const UPSELL_COOLDOWN_MS = 1000 * 60 * 30; // 30 minutes between prompts
 
     const lastUpsell = context.globalState.get(UPSELL_COOLDOWN_KEY, 0);
     const now = Date.now();

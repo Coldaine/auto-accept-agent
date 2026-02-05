@@ -1,1 +1,4 @@
 .env
+*.vsix
+.vscode/
+node_modules/
