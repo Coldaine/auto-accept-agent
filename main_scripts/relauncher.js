@@ -52,7 +52,7 @@ class Relauncher {
                 'View Help'
             ).then(selection => {
                 if (selection === 'View Help') {
-                    vscode.env.openExternal(vscode.Uri.parse('https://github.com/Antigravity-AI/auto-accept#background-mode-setup'));
+                    vscode.env.openExternal(vscode.Uri.parse('https://github.com/Coldaine/auto-accept-agent#quick-start-windows'));
                 }
             });
             return { success: false, relaunched: false };
@@ -74,7 +74,7 @@ class Relauncher {
             await vscode.env.clipboard.writeText(script);
             vscode.window.showInformationMessage('Script copied to clipboard! Please paste it into a terminal and run it, then close and restart your IDE.');
         } else if (selection === viewHelpButton) {
-            vscode.env.openExternal(vscode.Uri.parse('https://github.com/Antigravity-AI/auto-accept#background-mode-setup'));
+            vscode.env.openExternal(vscode.Uri.parse('https://github.com/Coldaine/auto-accept-agent#quick-start-windows'));
         }
 
         return { success: true, relaunched: false };
