@@ -4412,7 +4412,7 @@ var require_setup_panel = __commonJS({
         <div class="header">
             <img src="${iconUri}" alt="Icon" class="icon-img">
             <h1>Setup Required</h1>
-            <p class="subtitle">Enable Chrome DevTools Protocol for ${ideName}</p>
+            <p class="subtitle">Enable Chrome DevTools Protocol for ${this._escapeHtml(ideName)}</p>
         </div>
 
         <div class="section">
@@ -4430,16 +4430,16 @@ var require_setup_panel = __commonJS({
             <div class="step">
                 <div class="step-number">2</div>
                 <div class="step-content">
-                    <div class="step-title">Run in ${terminalName}</div>
-                    <div class="step-description">Paste and execute the script in ${terminalName}</div>
+                    <div class="step-title">Run in ${this._escapeHtml(terminalName)}</div>
+                    <div class="step-description">Paste and execute the script in ${this._escapeHtml(terminalName)}</div>
                 </div>
             </div>
 
             <div class="step">
                 <div class="step-number">3</div>
                 <div class="step-content">
-                    <div class="step-title">Restart ${ideName}</div>
-                    <div class="step-description">Completely close and restart ${ideName} for changes to take effect</div>
+                    <div class="step-title">Restart ${this._escapeHtml(ideName)}</div>
+                    <div class="step-description">Completely close and restart ${this._escapeHtml(ideName)} for changes to take effect</div>
                 </div>
             </div>
         </div>
