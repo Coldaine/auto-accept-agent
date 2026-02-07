@@ -19,7 +19,7 @@ test/**
 test_scripts/**
 *.test.js
 
-# Exclude all node_modules EXCEPT ws (required for Cursor CDP)
+# Exclude all node_modules EXCEPT ws (required for CDP WebSocket)
 node_modules/**
 !node_modules/ws/**
 

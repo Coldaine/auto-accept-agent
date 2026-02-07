@@ -3972,13 +3972,7 @@ var require_cdp_handler = __commonJS({
             res.on("end", () => {
               try {
                 const pages = JSON.parse(body);
-                const filtered = pages.filter(
-                  (p) => p.webSocketDebuggerUrl && (p.type === "page" || p.type === "webview") && p.url && p.url.includes("workbench.html")
-                );
-                if (pages.length !== filtered.length) {
-                  this.log(`Port ${port}: filtered ${pages.length - filtered.length} non-workbench pages`);
-                }
-                resolve(filtered);
+                resolve(pages.filter((p) => p.webSocketDebuggerUrl && (p.type === "page" || p.type === "webview")));
               } catch (e) {
                 this.log(`Port ${port}: JSON parse error - ${e.message}`);
                 resolve([]);
@@ -4508,13 +4502,10 @@ var require_relauncher = __commonJS({
         this.logger(`[Relauncher] ${msg}`);
       }
       /**
-       * Get the human-readable name of the IDE (Cursor, Antigravity, VS Code)
+       * Get the human-readable name of the IDE
        */
       getIdeName() {
-        const appName = vscode2.env.appName || "";
-        if (appName.toLowerCase().includes("cursor")) return "Cursor";
-        if (appName.toLowerCase().includes("antigravity")) return "Antigravity";
-        return "Code";
+        return "Antigravity";
       }
       /**
        * Main entry point: ensures CDP is enabled and relaunches if necessary
@@ -4675,7 +4666,7 @@ for dir in "\${DESKTOP_DIRS[@]}"; do
     if [ -d "$dir" ]; then
         for file in "$dir"/*.desktop; do
             if [ -f "$file" ]; then
-                if grep -qi "$IDE_NAME_LOWER" "$file" || grep -qi "cursor" "$file"; then
+                if grep -qi "$IDE_NAME_LOWER" "$file"; then
                     echo "Found: $file"
                     modify_desktop_file "$file"
                 fi
@@ -4732,15 +4723,13 @@ var bannedCommands = [];
 var backgroundModeEnabled = false;
 var BACKGROUND_DONT_SHOW_KEY = "auto-accept-background-dont-show";
 var BACKGROUND_MODE_KEY = "auto-accept-background-mode";
-var VERSION_7_0_KEY = "auto-accept-version-7.0-notification-shown";
-var VERSION_8_6_0_KEY = "auto-accept-version-8.6-notification-shown";
 var pollTimer;
 var statsCollectionTimer;
 var statusBarItem;
 var statusSettingsItem;
 var statusBackgroundItem;
 var outputChannel;
-var currentIDE = "unknown";
+var currentIDE = "Antigravity";
 var globalContext;
 var cdpHandler;
 var relauncher;
@@ -4754,10 +4743,7 @@ function log(message) {
   }
 }
 function detectIDE() {
-  const appName = vscode.env.appName || "";
-  if (appName.toLowerCase().includes("cursor")) return "Cursor";
-  if (appName.toLowerCase().includes("antigravity")) return "Antigravity";
-  return "Code";
+  return "Antigravity";
 }
 async function activate(context) {
   globalContext = context;
@@ -4807,7 +4793,6 @@ async function activate(context) {
     outputChannel = vscode.window.createOutputChannel("Personal Accept Logs");
     context.subscriptions.push(outputChannel);
     log(`Personal Accept: Activating...`);
-    log(`Personal Accept: Windows Environment detected.`);
     vscode.window.onDidChangeWindowState(async (e) => {
       if (cdpHandler && cdpHandler.setFocusState) {
         await cdpHandler.setFocusState(e.focused);
@@ -4868,7 +4853,6 @@ async function activate(context) {
     } catch (err) {
       log(`Error in environment check: ${err.message}`);
     }
-    showVersionNotification(context);
     log("Auto Accept: Activation complete");
   } catch (error) {
     console.error("ACTIVATION CRITICAL FAILURE:", error);
@@ -5027,10 +5011,8 @@ async function syncSessions() {
     log(`CDP: Syncing sessions (Mode: ${backgroundModeEnabled ? "Background" : "Simple"})...`);
     try {
       await cdpHandler.start({
-        isPro: true,
         isBackgroundMode: backgroundModeEnabled,
         pollInterval: pollFrequency,
-        ide: currentIDE,
         bannedCommands
       });
     } catch (err) {
@@ -5275,66 +5257,6 @@ function updateStatusBar() {
     if (statusBackgroundItem) {
       statusBackgroundItem.hide();
     }
-  }
-}
-async function showVersionNotification(context) {
-  const hasShown8_6 = context.globalState.get(VERSION_8_6_0_KEY, false);
-  if (!hasShown8_6) {
-    const title2 = "\u{1F680} What's new in Personal Accept 8.6.0";
-    const body2 = `Simpler setup. More control.
-
-\u2705 Manual CDP Setup \u2014 Platform-specific scripts give you full control over shortcut configuration
-
-\u{1F4CB} Copy-to-Clipboard \u2014 Easy script transfer to your terminal
-
-\u{1F527} Platform Support \u2014 Windows PowerShell, macOS Terminal, and Linux Bash scripts
-
-\u{1F6E1}\uFE0F Enhanced Security \u2014 No automatic file modification, you run scripts when ready
-
-\u26A1 Same Great Features \u2014 All the Personal Accept functionality you love, now with clearer setup`;
-    const btnDashboard2 = "View Dashboard";
-    const btnGotIt2 = "Got it";
-    await context.globalState.update(VERSION_8_6_0_KEY, true);
-    const selection2 = await vscode.window.showInformationMessage(
-      `${title2}
-
-${body2}`,
-      { modal: true },
-      btnGotIt2,
-      btnDashboard2
-    );
-    if (selection2 === btnDashboard2) {
-      const panel = getSettingsPanel();
-      if (panel) panel.createOrShow(context.extensionUri, context);
-    }
-    return;
-  }
-  const hasShown7_0 = context.globalState.get(VERSION_7_0_KEY, false);
-  if (hasShown7_0) return;
-  const title = "\u{1F680} What's new in Personal Accept 7.0";
-  const body = `Smarter. Faster. More reliable.
-
-\u2705 Smart Away Notifications \u2014 Get notified only when actions happened while you were truly away.
-
-\u{1F4CA} Session Insights \u2014 See exactly what happened when you turn off Personal Accept: file edits, terminal commands, and blocked interruptions.
-
-\u26A1 Improved Background Mode \u2014 Faster, more reliable multi-chat handling.
-
-\u{1F6E1}\uFE0F Enhanced Stability \u2014 Complete analytics rewrite for rock-solid tracking.`;
-  const btnDashboard = "View Dashboard";
-  const btnGotIt = "Got it";
-  await context.globalState.update(VERSION_7_0_KEY, true);
-  const selection = await vscode.window.showInformationMessage(
-    `${title}
-
-${body}`,
-    { modal: true },
-    btnGotIt,
-    btnDashboard
-  );
-  if (selection === btnDashboard) {
-    const panel = getSettingsPanel();
-    if (panel) panel.createOrShow(context.extensionUri, context);
   }
 }
 function deactivate() {

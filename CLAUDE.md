@@ -2,12 +2,30 @@
 
 VS Code extension that auto-accepts AI suggestions in **Antigravity IDE only**. This is not a general-purpose or multi-IDE extension — it targets a single IDE (Antigravity, a VS Code fork) with known UI structure.
 
+## CRITICAL: Setup Required Before Extension Works
+
+**The extension does NOTHING without CDP.** Antigravity must be launched with `--remote-debugging-port=9000` or the extension will sit idle showing OFF.
+
+**First-time setup** (patches all shortcuts + installs extension):
+```powershell
+.\scripts\setup.ps1
+```
+
+**After setup**, every Antigravity launch via the patched shortcut will have CDP enabled automatically. If CDP stops working, re-run the setup script — it's idempotent.
+
+**Quick verification** that CDP is active:
+```powershell
+Invoke-WebRequest -Uri 'http://127.0.0.1:9000/json/list' | Select-Object -ExpandProperty Content
+```
+
+If this returns an empty array or JSON, CDP is working. If it errors, Antigravity wasn't launched with the flag.
+
 ## Key Context for AI Reviewers
 
-- **Antigravity-only**: All selectors, URL filters, and DOM assumptions are intentional for this specific IDE. Do not flag them as "fragile across IDEs" or "too broad" — they are correct for the target environment.
-- **`workbench.html` filter**: The known main page URL for Antigravity. This is not an assumption — it is how VS Code forks work.
-- **Selectors like `button[class*="primary"]`**: Scoped by `isAcceptButton()` text-pattern filtering. The combination is precise for Antigravity's UI.
-- **`isPro: true` is hardcoded**: This is a personal fork. Pro-gating logic from the original project is bypassed.
+- **Antigravity-only**: All selectors and DOM assumptions are intentional for this specific IDE. There is no multi-IDE support — all Cursor/Code branching has been removed.
+- **No page URL filtering**: CDP connects to ALL page/webview targets, not just `workbench.html`. This is critical because Antigravity's agent panel (where accept/run buttons live) is a cross-origin iframe that requires separate CDP targeting.
+- **Broad button selectors**: `['button', '[class*="button"]']` combined with `isAcceptButton()` text filtering. The broad selectors are necessary to find buttons across different DOM contexts. Do not narrow them to specific class names — Antigravity's UI classes change between versions.
+- **Pro-gating removed**: This is a personal fork. The `isPro` config field and all branching on it have been removed.
 
 ## Architecture
 
@@ -23,7 +41,7 @@ extension.js                          ← VS Code extension entry point
 
 1. **Activation**: Extension activates on `onStartupFinished`, creates status bar items, restores state from globalState
 2. **CDP Setup**: User must launch Antigravity with `--remote-debugging-port=9000`. Relauncher detects this and provides platform-specific scripts if missing
-3. **Connection**: CDPHandler scans ports 8997–9003, finds pages via `/json/list`, filters for `workbench.html`, connects via WebSocket
+3. **Connection**: CDPHandler scans ports 8997–9003, finds all page/webview targets via `/json/list`, connects via WebSocket
 4. **Injection**: `full_cdp_script.js` is injected via `Runtime.evaluate`. It exposes lifecycle functions (`__autoAcceptStart`, `__autoAcceptStop`, etc.)
 5. **Polling**: Extension syncs config every 5 seconds. Injected script polls for accept buttons at configurable interval (200–3000ms, default 750ms)
 
@@ -58,6 +76,18 @@ npm run package    # npx vsce package → .vsix
 ```
 
 The `.vscodeignore` excludes everything except dist/, main_scripts/, media/, settings-panel.js, and `node_modules/ws/` (the only runtime dependency).
+
+## Known Pitfalls (Lessons from Fork)
+
+These bugs were introduced during the fork from MunKhin/auto-accept-agent. They are documented here so future AI reviewers and maintainers do not re-introduce them.
+
+1. **DO NOT filter CDP pages by URL.** The `_getPages()` method must connect to ALL `page`/`webview` targets. Antigravity's agent panel is a cross-origin iframe — its buttons are invisible from the main workbench page's DOM. CDP needs to inject into all available targets.
+
+2. **DO NOT use narrow CSS selectors for buttons.** Antigravity's UI classes change between versions (e.g., `.bg-ide-button-background` no longer exists). Use broad selectors (`button`, `[class*="button"]`) and rely on `isAcceptButton()` text matching to identify accept/run/retry buttons.
+
+3. **DO NOT add Cursor/Code IDE branching.** This is an Antigravity-only extension. The upstream supports multiple IDEs, but this fork removed all Cursor-specific code (`cursorLoop`, Cursor tab selectors, `anysphere` class matching). Do not re-add them.
+
+4. **Rebuild the VSIX after changing `package.json`.** The publisher identity is baked into the VSIX manifest at build time. If you change the publisher in `package.json`, the old VSIX still contains the old publisher. Always run `npm run package` to rebuild.
 
 ## Branding
 

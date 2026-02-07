@@ -22,13 +22,10 @@ class Relauncher {
     }
 
     /**
-     * Get the human-readable name of the IDE (Cursor, Antigravity, VS Code)
+     * Get the human-readable name of the IDE
      */
     getIdeName() {
-        const appName = vscode.env.appName || '';
-        if (appName.toLowerCase().includes('cursor')) return 'Cursor';
-        if (appName.toLowerCase().includes('antigravity')) return 'Antigravity';
-        return 'Code';
+        return 'Antigravity';
     }
 
     /**
@@ -195,7 +192,7 @@ for dir in "\${DESKTOP_DIRS[@]}"; do
     if [ -d "\$dir" ]; then
         for file in "\$dir"/*.desktop; do
             if [ -f "\$file" ]; then
-                if grep -qi "\$IDE_NAME_LOWER" "\$file" || grep -qi "cursor" "\$file"; then
+                if grep -qi "\$IDE_NAME_LOWER" "\$file"; then
                     echo "Found: \$file"
                     modify_desktop_file "\$file"
                 fi

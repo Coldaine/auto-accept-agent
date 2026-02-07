@@ -35,8 +35,6 @@ let bannedCommands = []; // List of command patterns to block
 let backgroundModeEnabled = false;
 const BACKGROUND_DONT_SHOW_KEY = 'auto-accept-background-dont-show';
 const BACKGROUND_MODE_KEY = 'auto-accept-background-mode';
-const VERSION_7_0_KEY = 'auto-accept-version-7.0-notification-shown';
-const VERSION_8_6_0_KEY = 'auto-accept-version-8.6-notification-shown';
 
 let pollTimer;
 let statsCollectionTimer; // For periodic stats collection
@@ -44,7 +42,7 @@ let statusBarItem;
 let statusSettingsItem;
 let statusBackgroundItem; // New: Background Mode toggle
 let outputChannel;
-let currentIDE = 'unknown'; // 'cursor' | 'antigravity'
+let currentIDE = 'Antigravity';
 let globalContext;
 
 // Handlers (used by both IDEs now)
@@ -62,10 +60,7 @@ function log(message) {
 }
 
 function detectIDE() {
-    const appName = vscode.env.appName || '';
-    if (appName.toLowerCase().includes('cursor')) return 'Cursor';
-    if (appName.toLowerCase().includes('antigravity')) return 'Antigravity';
-    return 'Code'; // only supporting these 3 for now
+    return 'Antigravity';
 }
 
 async function activate(context) {
@@ -134,7 +129,6 @@ async function activate(context) {
         context.subscriptions.push(outputChannel);
 
         log(`Personal Accept: Activating...`);
-        log(`Personal Accept: Windows Environment detected.`);
 
         // Setup Focus Listener - Push state to browser (authoritative source)
         vscode.window.onDidChangeWindowState(async (e) => {
@@ -212,9 +206,6 @@ async function activate(context) {
         } catch (err) {
             log(`Error in environment check: ${err.message}`);
         }
-
-        // 8. Show Version 5.0 Notification (Once)
-        showVersionNotification(context);
 
         log('Auto Accept: Activation complete');
     } catch (error) {
@@ -425,10 +416,8 @@ async function syncSessions() {
         log(`CDP: Syncing sessions (Mode: ${backgroundModeEnabled ? 'Background' : 'Simple'})...`);
         try {
             await cdpHandler.start({
-                isPro: true,
                 isBackgroundMode: backgroundModeEnabled,
                 pollInterval: pollFrequency,
-                ide: currentIDE,
                 bannedCommands: bannedCommands
             });
         } catch (err) {
@@ -745,76 +734,6 @@ function updateStatusBar() {
     }
 }
 
-async function showVersionNotification(context) {
-    // Check if 8.6.0 notification has been shown
-    const hasShown8_6 = context.globalState.get(VERSION_8_6_0_KEY, false);
-    if (!hasShown8_6) {
-        // Show 8.6.0 notification
-        const title = "🚀 What's new in Personal Accept 8.6.0";
-        const body = `Simpler setup. More control.
-
-✅ Manual CDP Setup — Platform-specific scripts give you full control over shortcut configuration
-
-📋 Copy-to-Clipboard — Easy script transfer to your terminal
-
-🔧 Platform Support — Windows PowerShell, macOS Terminal, and Linux Bash scripts
-
-🛡️ Enhanced Security — No automatic file modification, you run scripts when ready
-
-⚡ Same Great Features — All the Personal Accept functionality you love, now with clearer setup`;
-        const btnDashboard = "View Dashboard";
-        const btnGotIt = "Got it";
-
-        // Mark as shown immediately to prevent loops/multiple showings
-        await context.globalState.update(VERSION_8_6_0_KEY, true);
-
-        const selection = await vscode.window.showInformationMessage(
-            `${title}\n\n${body}`,
-            { modal: true },
-            btnGotIt,
-            btnDashboard
-        );
-
-        if (selection === btnDashboard) {
-            const panel = getSettingsPanel();
-            if (panel) panel.createOrShow(context.extensionUri, context);
-        }
-        return;
-    }
-
-    // Legacy: Check if 7.0 notification has been shown (for backward compatibility)
-    const hasShown7_0 = context.globalState.get(VERSION_7_0_KEY, false);
-    if (hasShown7_0) return;
-
-    // Show 7.0 notification (only for users who haven't seen any notification)
-    const title = "🚀 What's new in Personal Accept 7.0";
-    const body = `Smarter. Faster. More reliable.
-
-✅ Smart Away Notifications — Get notified only when actions happened while you were truly away.
-
-📊 Session Insights — See exactly what happened when you turn off Personal Accept: file edits, terminal commands, and blocked interruptions.
-
-⚡ Improved Background Mode — Faster, more reliable multi-chat handling.
-
-🛡️ Enhanced Stability — Complete analytics rewrite for rock-solid tracking.`;
-    const btnDashboard = "View Dashboard";
-    const btnGotIt = "Got it";
-
-    // Mark as shown immediately to prevent loops/multiple showings
-    await context.globalState.update(VERSION_7_0_KEY, true);
-
-    const selection = await vscode.window.showInformationMessage(
-        `${title}\n\n${body}`,
-        { modal: true },
-        btnGotIt,
-        btnDashboard
-    );
-
-    if (selection === btnDashboard) {
-        const panel = getSettingsPanel();
-        if (panel) panel.createOrShow(context.extensionUri, context);
-    }
-}
 
 function deactivate() {
     stopPolling();

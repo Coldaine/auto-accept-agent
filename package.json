@@ -49,10 +49,10 @@
         ]
     },
     "dependencies": {
-        "@vscode/vsce": "^3.7.1",
         "ws": "^8.13.0"
     },
     "devDependencies": {
-        "esbuild": "^0.27.1"
+        "@vscode/vsce": "^3.7.1",
+        "esbuild": "^0.27.3"
     }
 }

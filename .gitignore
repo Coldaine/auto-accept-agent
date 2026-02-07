@@ -5,3 +5,4 @@ node_modules/
 *.log
 *.txt
 dist/
+test_scripts/debug_*
