@@ -733,11 +733,22 @@
         let clicked = 0;
         let verified = 0;
         const uniqueFound = [...new Set(found)];
+        const now = Date.now();
+        const CLICK_COOLDOWN_MS = 5000; // Don't re-click the same button within 5 seconds
 
         for (const el of uniqueFound) {
+            // Skip buttons we've already clicked recently (deduplication)
+            const lastClicked = parseInt(el.getAttribute('data-auto-accept-clicked') || '0', 10);
+            if (lastClicked > 0 && (now - lastClicked) < CLICK_COOLDOWN_MS) {
+                continue; // Still in cooldown
+            }
+
             if (isAcceptButton(el)) {
                 const buttonText = (el.textContent || "").trim();
                 log(`Clicking: "${buttonText}"`);
+
+                // Mark button BEFORE clicking to prevent race conditions with rapid polling
+                el.setAttribute('data-auto-accept-clicked', String(Date.now()));
 
                 // Dispatch click
                 el.dispatchEvent(new MouseEvent('click', { view: window, bubbles: true, cancelable: true }));
@@ -752,7 +763,7 @@
                     verified++;
                     log(`[Stats] Click verified (button disappeared)`);
                 } else {
-                    log(`[Stats] Click not verified (button still visible after 500ms)`);
+                    log(`[Stats] Click not verified (button still visible) - cooldown applied for ${CLICK_COOLDOWN_MS}ms`);
                 }
             }
         }
