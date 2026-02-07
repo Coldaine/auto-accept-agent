@@ -10,15 +10,15 @@ Keeps Antigravity conversations moving by automatically clicking approval button
 
 ## Why?
 
-Antigravity's multi-agent workflow is powerful, but it stops every time the agent needs approval. 
+Antigravity's multi-agent workflow is powerful, but it stops every time the agent needs approval.
 
 **That's dozens of interruptions per hour.**
 
 Auto Accept eliminates the wait:
-- ✅ **File edits** — Auto-applied
-- ✅ **Terminal commands** — Auto-executed
-- ✅ **Retry prompts** — Auto-confirmed
-- ✅ **Stuck agents** — Auto-recovered
+- **File edits** — Auto-applied
+- **Terminal commands** — Auto-executed
+- **Retry prompts** — Auto-confirmed
+- **Stuck agents** — Auto-recovered
 
 ---
 
@@ -41,23 +41,39 @@ Visual indicators show conversation state:
 - **Purple** — In progress, actively polling
 - **Green** — Task completed
 
-### Works Everywhere
-- ✅ Antigravity
-- ✅ Cursor
-- ✅ Multiple windows
-- ✅ Minimized/unfocused
-
 ---
 
 ## Quick Start (Windows)
 
-1. **Install** the extension
-2. **Enable CDP** when prompted (copy the PowerShell script to clipboard)
-3. **Run the script** in PowerShell
-4. **Restart** Antigravity completely
-5. **Done** — Auto Accept activates automatically
+Run the setup script in PowerShell:
 
-The extension runs silently. Check the status bar for `Auto Accept: ON`.
+```powershell
+.\scripts\setup.ps1
+```
+
+This will:
+1. Find all Antigravity shortcuts (Desktop, Start Menu, Taskbar, OneDrive) and add the CDP flag
+2. Build and install the .vsix extension into Antigravity
+3. Tell you to restart Antigravity
+
+After restarting, Auto Accept activates automatically. Check the status bar for `Personal Accept: ACTIVE`.
+
+### Manual steps (if you prefer)
+
+1. Add `--remote-debugging-port=9000` to your Antigravity shortcut's target
+2. Install the .vsix: `antigravity --install-extension auto-accept-agent-*.vsix --force`
+3. Restart Antigravity
+
+---
+
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/setup.ps1` | **One-shot setup** — patches shortcuts + installs extension |
+| `scripts/setup.ps1 -SkipShortcut` | Only install the extension (shortcut already patched) |
+| `scripts/setup.ps1 -SkipInstall` | Only patch shortcuts (extension already installed) |
+| `scripts/launch-antigravity.ps1` | Launch Antigravity with CDP flag (doesn't patch shortcuts) |
 
 ---
 
@@ -70,14 +86,14 @@ Auto Accept operates via a **CDP (Chrome DevTools Protocol) Bridge**:
 3. **Safety Monitoring**: Before clicking any "Run" button, the script scrapes the terminal context and cross-references it against a `Banned Commands` list.
 4. **Autonomous Cycling**: In Background Mode, the extension programmatically switches between tabs to ensure agents in different conversations remain active.
 
-## Troubleshooting (Antigravity)
+## Troubleshooting
 
 ### Connection Check
 If the status bar says `OFF` or `PAUSED`, verify the CDP bridge:
-1. Ensure Antigravity was launched with `--remote-debugging-port=9000`.
-2. Run the diagnostic script:
+1. Ensure Antigravity was launched with `--remote-debugging-port=9000` (use the patched shortcut).
+2. Verify CDP is responding:
    ```powershell
-   node verify_connection_live.js
+   Invoke-WebRequest -Uri 'http://127.0.0.1:9000/json/list' | Select-Object -ExpandProperty Content
    ```
 
 ### Button Not Clicking
@@ -85,36 +101,6 @@ If the status bar says `OFF` or `PAUSED`, verify the CDP bridge:
 2. Select **Personal Accept Logs**.
 3. If you see `[BANNED]`, the command was blocked for safety.
 4. If you see nothing, the IDE's UI might have updated; check the button selectors in `main_scripts/full_cdp_script.js`.
-
----
-
-## Launch Scripts
-
-For convenience, launch scripts are provided in the `scripts/` folder:
-
-### Windows (PowerShell)
-```powershell
-# Launch Antigravity with CDP enabled
-.\scripts\launch-antigravity.ps1
-
-# Launch Cursor instead
-.\scripts\launch-antigravity.ps1 -IDE Cursor
-
-# Use a different port
-.\scripts\launch-antigravity.ps1 -Port 9001
-```
-
-### macOS / Linux (Bash)
-```bash
-# Make executable (first time only)
-chmod +x scripts/launch-antigravity.sh
-
-# Launch Antigravity
-./scripts/launch-antigravity.sh
-
-# Launch Cursor
-./scripts/launch-antigravity.sh cursor
-```
 
 ---
 
