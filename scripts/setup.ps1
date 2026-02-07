@@ -154,13 +154,18 @@ if (-not $SkipInstall) {
     }
 
     Write-Host "  Installing into $IdeName..." -ForegroundColor Cyan
-    & $antigravityCli --install-extension $vsix.FullName --force
 
-    if ($LASTEXITCODE -eq 0) {
+    # Antigravity CLI crashes after successful install (antigravityAnalytics service error)
+    # so we check the output text rather than exit code
+    $installOutput = & $antigravityCli --install-extension $vsix.FullName --force 2>&1 | Out-String
+
+    if ($installOutput -match "was successfully installed") {
         Write-Host ""
         Write-Host "  Extension installed successfully!" -ForegroundColor Green
     } else {
-        Write-Host "  ERROR: Installation failed (exit code $LASTEXITCODE)" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "  ERROR: Installation may have failed." -ForegroundColor Red
+        Write-Host $installOutput -ForegroundColor Gray
         exit 1
     }
 
