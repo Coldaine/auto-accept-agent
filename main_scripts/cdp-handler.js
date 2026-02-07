@@ -81,11 +81,11 @@ class CDPHandler {
                             this.log(`Port ${port}: filtered ${pages.length - filtered.length} non-workbench pages`);
                         }
                         resolve(filtered);
-                    } catch (e) { resolve([]); }
+                    } catch (e) { this.log(`Port ${port}: JSON parse error - ${e.message}`); resolve([]); }
                 });
             });
-            req.on('error', () => resolve([]));
-            req.on('timeout', () => { req.destroy(); resolve([]); });
+            req.on('error', (e) => { this.log(`Port ${port}: request error - ${e.message}`); resolve([]); });
+            req.on('timeout', () => { this.log(`Port ${port}: request timeout`); req.destroy(); resolve([]); });
         });
     }
 

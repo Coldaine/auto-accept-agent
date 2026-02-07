@@ -11,8 +11,6 @@
 
     // ============================================================
     // ANALYTICS MODULE (Embedded)
-    // Clean, modular analytics with separated concerns.
-    // See: main_scripts/analytics/ for standalone module files
     // ============================================================
     const Analytics = (function () {
         // --- Constants ---

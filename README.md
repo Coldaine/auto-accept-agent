@@ -84,7 +84,7 @@ If the status bar says `OFF` or `PAUSED`, verify the CDP bridge:
 1. Open the **Output** panel in Antigravity.
 2. Select **Personal Accept Logs**.
 3. If you see `[BANNED]`, the command was blocked for safety.
-4. If you see nothing, the IDE's UI might have updated; check the `.bg-ide-button-background` selector in `main_scripts/auto_accept.js`.
+4. If you see nothing, the IDE's UI might have updated; check the button selectors in `main_scripts/full_cdp_script.js`.
 
 ---
 
