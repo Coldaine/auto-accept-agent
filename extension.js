@@ -699,7 +699,7 @@ function updateStatusBar() {
     if (isEnabled) {
         let statusText = 'ACTIVE';
         let tooltip = `Personal Accept is running.`;
-        let bgColor = undefined;
+        let bgColor = '#00d9ff'; // Cyan - distinctive personal fork identifier
         let icon = '$(pass-filled)';
 
         const cdpConnected = cdpHandler && cdpHandler.getConnectionCount() > 0;

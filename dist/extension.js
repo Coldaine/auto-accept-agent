@@ -5241,7 +5241,7 @@ function updateStatusBar() {
   if (isEnabled) {
     let statusText = "ACTIVE";
     let tooltip = `Personal Accept is running.`;
-    let bgColor = void 0;
+    let bgColor = "#00d9ff";
     let icon = "$(pass-filled)";
     const cdpConnected = cdpHandler && cdpHandler.getConnectionCount() > 0;
     if (cdpConnected) {
