@@ -603,39 +603,8 @@ async function showAwayActionsNotification(context, actionsCount) {
     });
 }
 
-// --- BACKGROUND MODE UPSELL ---
-// Called when user switches tabs (could have been auto-handled)
-// Note: This function is currently unused but kept for potential future use
-async function showBackgroundModeUpsell(context) {
-    // Background mode is now available to all users
-    if (backgroundModeEnabled) return; // Already enabled
-
-    const UPSELL_COOLDOWN_KEY = 'auto-accept-bg-upsell-last';
-    const UPSELL_COOLDOWN_MS = 1000 * 60 * 30; // 30 minutes between prompts
-
-    const lastUpsell = context.globalState.get(UPSELL_COOLDOWN_KEY, 0);
-    const now = Date.now();
-
-    if (now - lastUpsell < UPSELL_COOLDOWN_MS) return; // Too soon
-
-    await context.globalState.update(UPSELL_COOLDOWN_KEY, now);
-
-    const choice = await vscode.window.showInformationMessage(
-        `💡 Auto Accept could've handled this tab switch automatically.`,
-        { detail: 'Enable Background Mode to keep all your agents moving in parallel—no manual tab switching needed.' },
-        'Enable Background Mode',
-        'Not Now'
-    );
-
-    if (choice === 'Enable Background Mode') {
-        const panel = getSettingsPanel();
-        if (panel) panel.createOrShow(context.extensionUri, context);
-    }
-}
-
 // --- AWAY MODE POLLING ---
 // Check for "away actions" when user returns (called periodically)
-let lastAwayCheck = Date.now();
 async function checkForAwayActions(context) {
     log(`[Away] checkForAwayActions called. cdpHandler=${!!cdpHandler}, isEnabled=${isEnabled}`);
     if (!cdpHandler || !isEnabled) {
@@ -750,31 +719,6 @@ function updateStatusBar() {
             statusBackgroundItem.hide();
         }
     }
-}
-
-// Re-implement checkInstanceLock correctly with context
-async function checkInstanceLock() {
-    if (!globalContext) return true; // Should not happen
-
-    const lockId = globalContext.globalState.get(LOCK_KEY);
-    const lastHeartbeat = globalContext.globalState.get(HEARTBEAT_KEY, 0);
-    const now = Date.now();
-
-    // 1. If no lock or lock is stale (>10s), claim it
-    if (!lockId || (now - lastHeartbeat > 10000)) {
-        await globalContext.globalState.update(LOCK_KEY, INSTANCE_ID);
-        await globalContext.globalState.update(HEARTBEAT_KEY, now);
-        return true;
-    }
-
-    // 2. If we own the lock, update heartbeat
-    if (lockId === INSTANCE_ID) {
-        await globalContext.globalState.update(HEARTBEAT_KEY, now);
-        return true;
-    }
-
-    // 3. Someone else owns the lock and it's fresh
-    return false;
 }
 
 async function showVersionNotification(context) {

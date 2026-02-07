@@ -3,6 +3,12 @@
 .git/**
 .gitignore
 .agent/**
+.vscode/**
+
+# Exclude dev utilities
+verify_connection_live.js
+vizvibe.mmd
+*.mmd
 
 # Exclude output files and logs
 *.txt

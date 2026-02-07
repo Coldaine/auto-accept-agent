@@ -71,13 +71,21 @@ class CDPHandler {
                 res.on('end', () => {
                     try {
                         const pages = JSON.parse(body);
-                        // Filter for pages that look like IDE windows (usually type "page" or "background_page")
-                        resolve(pages.filter(p => p.webSocketDebuggerUrl && (p.type === 'page' || p.type === 'webview')));
-                    } catch (e) { resolve([]); }
+                        // Filter for workbench pages only (the main IDE window)
+                        const filtered = pages.filter(p =>
+                            p.webSocketDebuggerUrl &&
+                            (p.type === 'page' || p.type === 'webview') &&
+                            p.url && p.url.includes('workbench.html')
+                        );
+                        if (pages.length !== filtered.length) {
+                            this.log(`Port ${port}: filtered ${pages.length - filtered.length} non-workbench pages`);
+                        }
+                        resolve(filtered);
+                    } catch (e) { this.log(`Port ${port}: JSON parse error - ${e.message}`); resolve([]); }
                 });
             });
-            req.on('error', () => resolve([]));
-            req.on('timeout', () => { req.destroy(); resolve([]); });
+            req.on('error', (e) => { this.log(`Port ${port}: request error - ${e.message}`); resolve([]); });
+            req.on('timeout', () => { this.log(`Port ${port}: request timeout`); req.destroy(); resolve([]); });
         });
     }
 
