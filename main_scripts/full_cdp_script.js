@@ -211,7 +211,7 @@
     // --- LOGGING ---
     const log = (msg, isSuccess = false) => {
         // Simple log for CDP interception
-        console.log(`[AutoAccept] ${msg}`);
+        console.log(`[PersonalAccept] ${msg}`);
     };
 
     // Initialize Analytics
@@ -261,6 +261,11 @@
 
     const updateTabNames = (tabs) => {
         const rawNames = Array.from(tabs).map(tab => stripTimeSuffix(tab.textContent));
+        // Guard: do not clear tab list during transient DOM refreshes
+        if (rawNames.length === 0 && window.__autoAcceptState.tabNames.length > 0) {
+            log('updateTabNames: DOM returned 0 tabs but we had tabs before -- skipping (transient refresh)');
+            return;
+        }
         const tabNames = deduplicateNames(rawNames);
 
         if (JSON.stringify(window.__autoAcceptState.tabNames) !== JSON.stringify(tabNames)) {
@@ -354,7 +359,13 @@
             log(`[Overlay] Found panel for ${ide}, syncing position`);
             const sync = () => {
                 const r = panel.getBoundingClientRect();
-                Object.assign(overlay.style, { top: r.top + 'px', left: r.left + 'px', width: r.width + 'px', height: r.height + 'px' });
+                if (r.width < 50) {
+                    // Panel collapsed -- fall back to fullscreen
+                    log('[Overlay] Panel collapsed below 50px, switching to fullscreen');
+                    Object.assign(overlay.style, { top: '0', left: '0', width: '100%', height: '100%' });
+                } else {
+                    Object.assign(overlay.style, { top: r.top + 'px', left: r.left + 'px', width: r.width + 'px', height: r.height + 'px' });
+                }
             };
             sync();
             // Clean up any existing observer before creating new one

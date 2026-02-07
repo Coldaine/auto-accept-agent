@@ -2,6 +2,7 @@ const vscode = require('vscode');
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
+const { SetupPanel } = require('../setup-panel');
 
 const CDP_PORT = 9000;
 const CDP_FLAG = `--remote-debugging-port=${CDP_PORT}`;
@@ -10,7 +11,8 @@ const CDP_FLAG = `--remote-debugging-port=${CDP_PORT}`;
  * Robust cross-platform manager for IDE shortcuts and relaunching
  */
 class Relauncher {
-    constructor(logger = console.log) {
+    constructor(context, logger = console.log) {
+        this.context = context;
         this.platform = os.platform();
         this.logger = logger;
     }
@@ -47,7 +49,7 @@ class Relauncher {
         
         if (!script) {
             vscode.window.showErrorMessage(
-                `Auto Accept: Unsupported platform. Please add --remote-debugging-port=9000 to your ${ideName} shortcut manually, then restart.`,
+                `Personal Accept: Unsupported platform. Please add --remote-debugging-port=9000 to your ${ideName} shortcut manually, then restart.`,
                 'View Help'
             ).then(selection => {
                 if (selection === 'View Help') {
@@ -57,23 +59,24 @@ class Relauncher {
             return { success: false, relaunched: false };
         }
 
-        // Show modal message with script and copy button
-        const message = `Auto Accept: CDP flag missing. To enable Background Mode, please run the script for ${ideName} on ${this.platform}.`;
-        const copyButton = 'Copy Script to Clipboard';
-        const viewHelpButton = 'View Help';
-        
-        const selection = await vscode.window.showInformationMessage(
-            message,
-            { modal: true, detail: `${instructions}\n\nScript:\n${script}` },
-            copyButton,
-            viewHelpButton
-        );
+        // Show the new Setup Panel webview instead of modal message
+        if (this.context) {
+            SetupPanel.createOrShow(this.context.extensionUri, script, this.platform, ideName);
+        } else {
+            // Fallback for cases where context is not available
+            const message = `Personal Accept: CDP flag missing. To enable Background Mode, please run the script for ${ideName} on ${this.platform}.`;
+            const copyButton = 'Copy Script to Clipboard';
 
-        if (selection === copyButton) {
-            await vscode.env.clipboard.writeText(script);
-            vscode.window.showInformationMessage('Script copied to clipboard! Please paste it into a terminal and run it, then close and restart your IDE.');
-        } else if (selection === viewHelpButton) {
-            vscode.env.openExternal(vscode.Uri.parse('https://github.com/Coldaine/auto-accept-agent#quick-start-windows'));
+            const selection = await vscode.window.showInformationMessage(
+                message,
+                { modal: true, detail: `${instructions}\n\nScript:\n${script}` },
+                copyButton
+            );
+
+            if (selection === copyButton) {
+                await vscode.env.clipboard.writeText(script);
+                vscode.window.showInformationMessage('Script copied to clipboard! Please paste it into a terminal and run it, then close and restart your IDE.');
+            }
         }
 
         return { success: true, relaunched: false };
@@ -98,11 +101,27 @@ class Relauncher {
         
         if (platform === 'win32') {
             const script = `$WshShell = New-Object -ComObject WScript.Shell
-$DesktopPath = [System.IO.Path]::Combine($env:USERPROFILE, "Desktop")
-$Shortcuts = Get-ChildItem "$DesktopPath\\*.lnk" | Where-Object { $_.Name -like "*${ideName}*" }
+$SearchPaths = @(
+    [System.IO.Path]::Combine($env:USERPROFILE, "Desktop"),
+    [System.IO.Path]::Combine($env:USERPROFILE, "OneDrive", "Desktop"),
+    [System.IO.Path]::Combine($env:APPDATA, "Microsoft", "Windows", "Start Menu", "Programs"),
+    [System.IO.Path]::Combine($env:APPDATA, "Microsoft", "Internet Explorer", "Quick Launch", "User Pinned", "TaskBar")
+)
 
-if ($Shortcuts.Count -eq 0) {
-    Write-Host "No ${ideName} shortcut found on Desktop. Creating a new one..." -ForegroundColor Yellow
+$AllShortcuts = @()
+foreach ($SearchPath in $SearchPaths) {
+    if (Test-Path $SearchPath) {
+        $Found = Get-ChildItem "$SearchPath\\*.lnk" -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*${ideName}*" }
+        if ($Found) {
+            $AllShortcuts += $Found
+            Write-Host "Found shortcut(s) in: $SearchPath" -ForegroundColor Cyan
+        }
+    }
+}
+
+if ($AllShortcuts.Count -eq 0) {
+    Write-Host "No ${ideName} shortcut found. Creating one on Desktop..." -ForegroundColor Yellow
+    $DesktopPath = [System.IO.Path]::Combine($env:USERPROFILE, "Desktop")
     $ShortcutPath = "$DesktopPath\\${ideName}.lnk"
     $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
     $Shortcut.TargetPath = "$env:LOCALAPPDATA\\Programs\\${ideName}\\${ideName}.exe"
@@ -110,7 +129,7 @@ if ($Shortcuts.Count -eq 0) {
     $Shortcut.Save()
     Write-Host "Created new shortcut: $ShortcutPath" -ForegroundColor Green
 } else {
-    foreach ($ShortcutFile in $Shortcuts) {
+    foreach ($ShortcutFile in $AllShortcuts) {
         $Shortcut = $WshShell.CreateShortcut($ShortcutFile.FullName)
         $Args = $Shortcut.Arguments
         if ($Args -match "--remote-debugging-port=\\d+") {

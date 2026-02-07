@@ -70,7 +70,7 @@ function detectIDE() {
 
 async function activate(context) {
     globalContext = context;
-    console.log('Auto Accept Extension: Activator called.');
+    console.log('Personal Accept Extension: Activator called.');
 
     // CRITICAL: Create status bar items FIRST before anything else
     try {
@@ -157,11 +157,11 @@ async function activate(context) {
             const { Relauncher } = require('./main_scripts/relauncher');
 
             cdpHandler = new CDPHandler(log);
-            relauncher = new Relauncher(log);
+            relauncher = new Relauncher(context, log);
             log(`CDP handlers initialized for ${currentIDE}.`);
         } catch (err) {
             log(`Failed to initialize CDP handlers: ${err.message}`);
-            vscode.window.showErrorMessage(`Auto Accept Error: ${err.message}`);
+            vscode.window.showErrorMessage(`Personal Accept Error: ${err.message}`);
         }
 
         // 4. Update Status Bar (already created at start)
@@ -172,6 +172,14 @@ async function activate(context) {
         context.subscriptions.push(
             vscode.commands.registerCommand('auto-accept.toggle', () => handleToggle(context)),
             vscode.commands.registerCommand('auto-accept.relaunch', () => handleRelaunch()),
+            vscode.commands.registerCommand('auto-accept.showSetupPanel', async () => {
+                if (relauncher) {
+                    const { script } = await relauncher.getPlatformScriptAndInstructions();
+                    const ideName = relauncher.getIdeName();
+                    const { SetupPanel } = require('./setup-panel');
+                    SetupPanel.createOrShow(context.extensionUri, script, process.platform, ideName);
+                }
+            }),
             vscode.commands.registerCommand('auto-accept.updateFrequency', (freq) => handleFrequencyUpdate(context, freq)),
             vscode.commands.registerCommand('auto-accept.toggleBackground', () => handleBackgroundToggle(context)),
             vscode.commands.registerCommand('auto-accept.updateBannedCommands', (commands) => handleBannedCommandsUpdate(context, commands)),
@@ -212,7 +220,7 @@ async function activate(context) {
     } catch (error) {
         console.error('ACTIVATION CRITICAL FAILURE:', error);
         log(`ACTIVATION CRITICAL FAILURE: ${error.message}`);
-        vscode.window.showErrorMessage(`Auto Accept Extension failed to activate: ${error.message}`);
+        vscode.window.showErrorMessage(`Personal Accept Extension failed to activate: ${error.message}`);
     }
 }
 
@@ -226,24 +234,40 @@ async function ensureCDPOrPrompt(showPrompt = false) {
     if (cdpAvailable) {
         log('CDP is active and available.');
         return true;
-    } else {
-        log('CDP not found on target ports (9000 +/- 3).');
-        if (showPrompt && relauncher) {
-            log('Initiating CDP setup flow...');
-            await relauncher.ensureCDPAndRelaunch();
+    }
+
+    // Check if the flag is in process.argv (IDE was launched with it, but port died)
+    const hasFlag = process.argv.some(arg => arg.includes('--remote-debugging-port'));
+
+    if (hasFlag) {
+        log('CDP flag present in process.argv but port not responding. Prompting restart.');
+        const selection = await vscode.window.showWarningMessage(
+            'Personal Accept: CDP port is not responding. The IDE was launched with the correct flag but the debug port appears inactive. A restart usually fixes this.',
+            'Restart Now',
+            'Dismiss'
+        );
+        if (selection === 'Restart Now') {
+            await vscode.commands.executeCommand('workbench.action.reloadWindow');
         }
         return false;
     }
+
+    log('CDP not found on target ports (9000 +/- 3).');
+    if (showPrompt && relauncher) {
+        log('Initiating CDP setup flow...');
+        await relauncher.ensureCDPAndRelaunch();
+    }
+    return false;
 }
 
 async function checkEnvironmentAndStart() {
     if (isEnabled) {
-        log('Initializing Auto Accept environment...');
+        log('Initializing Personal Accept environment...');
         const cdpReady = await ensureCDPOrPrompt(false);
 
         if (!cdpReady) {
             // CDP not available - reset to OFF state so user can trigger setup via toggle
-            log('Auto Accept was enabled but CDP is not available. Resetting to OFF state.');
+            log('Personal Accept was enabled but CDP is not available. Resetting to OFF state.');
             isEnabled = false;
             await globalContext.globalState.update(GLOBAL_STATE_KEY, false);
         } else {
@@ -265,7 +289,7 @@ async function handleToggle(context) {
 
         // If trying to enable but CDP not available, prompt for relaunch (don't change state)
         if (!isEnabled && !cdpAvailable && relauncher) {
-            log('Auto Accept: CDP not available. Prompting for setup/relaunch.');
+            log('Personal Accept: CDP not available. Prompting for setup/relaunch.');
             await relauncher.ensureCDPAndRelaunch();
             return; // Don't change state - toggle stays OFF
         }
@@ -282,13 +306,13 @@ async function handleToggle(context) {
 
         // Do CDP operations in background (don't block toggle)
         if (isEnabled) {
-            log('Auto Accept: Enabled');
+            log('Personal Accept: Enabled');
             // These operations happen in background
             ensureCDPOrPrompt(true).then(() => startPolling());
             startStatsCollection(context);
             incrementSessionCount(context);
         } else {
-            log('Auto Accept: Disabled');
+            log('Personal Accept: Disabled');
 
             // Fire-and-forget: Show session summary notification (non-blocking)
             if (cdpHandler) {
@@ -350,7 +374,7 @@ async function handleBackgroundToggle(context) {
         // First-time enabling: Show confirmation dialog
         const choice = await vscode.window.showInformationMessage(
             'Turn on Background Mode?\n\n' +
-            'This lets Auto Accept work on all your open chats at once. ' +
+            'This lets Personal Accept work on all your open chats at once. ' +
             'It will switch between tabs to click Accept for you.\n\n' +
             'You might see tabs change quickly while it works.',
             { modal: true },
@@ -415,7 +439,7 @@ async function syncSessions() {
 
 async function startPolling() {
     if (pollTimer) clearInterval(pollTimer);
-    log('Auto Accept: Monitoring session...');
+    log('Personal Accept: Monitoring session...');
 
     // Initial trigger
     await syncSessions();
@@ -465,7 +489,7 @@ async function stopPolling() {
         statsCollectionTimer = null;
     }
     if (cdpHandler) await cdpHandler.stop();
-    log('Auto Accept: Polling stopped');
+    log('Personal Accept: Polling stopped');
 }
 
 // --- ROI Stats Collection ---
@@ -726,7 +750,7 @@ async function showVersionNotification(context) {
     const hasShown8_6 = context.globalState.get(VERSION_8_6_0_KEY, false);
     if (!hasShown8_6) {
         // Show 8.6.0 notification
-        const title = "🚀 What's new in Auto Accept 8.6.0";
+        const title = "🚀 What's new in Personal Accept 8.6.0";
         const body = `Simpler setup. More control.
 
 ✅ Manual CDP Setup — Platform-specific scripts give you full control over shortcut configuration
@@ -737,7 +761,7 @@ async function showVersionNotification(context) {
 
 🛡️ Enhanced Security — No automatic file modification, you run scripts when ready
 
-⚡ Same Great Features — All the Auto Accept functionality you love, now with clearer setup`;
+⚡ Same Great Features — All the Personal Accept functionality you love, now with clearer setup`;
         const btnDashboard = "View Dashboard";
         const btnGotIt = "Got it";
 
@@ -763,12 +787,12 @@ async function showVersionNotification(context) {
     if (hasShown7_0) return;
 
     // Show 7.0 notification (only for users who haven't seen any notification)
-    const title = "🚀 What's new in Auto Accept 7.0";
+    const title = "🚀 What's new in Personal Accept 7.0";
     const body = `Smarter. Faster. More reliable.
 
 ✅ Smart Away Notifications — Get notified only when actions happened while you were truly away.
 
-📊 Session Insights — See exactly what happened when you turn off Auto Accept: file edits, terminal commands, and blocked interruptions.
+📊 Session Insights — See exactly what happened when you turn off Personal Accept: file edits, terminal commands, and blocked interruptions.
 
 ⚡ Improved Background Mode — Faster, more reliable multi-chat handling.
 
