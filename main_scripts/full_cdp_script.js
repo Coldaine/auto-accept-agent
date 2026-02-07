@@ -335,28 +335,23 @@
         log('[Overlay] Overlay appended to body');
 
         // Find panel and sync position
-        const ide = state.currentMode || 'cursor';
         let panel = null;
-        if (ide === 'antigravity') {
-            const panelSelectors = [
-                '#antigravity\\.agentPanel',
-                '[class*="agentPanel"]',
-                '[class*="chat-panel"]',
-                '.auxiliary-bar',
-            ];
-            for (const sel of panelSelectors) {
-                panel = queryAll(sel).find(p => p.offsetWidth > 50);
-                if (panel) {
-                    log(`[Overlay] Found panel using: ${sel}`);
-                    break;
-                }
+        const panelSelectors = [
+            '#antigravity\\.agentPanel',
+            '[class*="agentPanel"]',
+            '[class*="chat-panel"]',
+            '.auxiliary-bar',
+        ];
+        for (const sel of panelSelectors) {
+            panel = queryAll(sel).find(p => p.offsetWidth > 50);
+            if (panel) {
+                log(`[Overlay] Found panel using: ${sel}`);
+                break;
             }
-        } else {
-            panel = queryAll('#workbench\\.parts\\.auxiliarybar').find(p => p.offsetWidth > 50);
         }
 
         if (panel) {
-            log(`[Overlay] Found panel for ${ide}, syncing position`);
+            log(`[Overlay] Found panel, syncing position`);
             const sync = () => {
                 const r = panel.getBoundingClientRect();
                 if (r.width < 50) {
@@ -769,61 +764,6 @@
     }
 
     // --- 4. POLL LOOPS ---
-    async function cursorLoop(sid) {
-        log('[Loop] cursorLoop STARTED');
-        let index = 0;
-        let cycle = 0;
-        while (window.__autoAcceptState.isRunning && window.__autoAcceptState.sessionID === sid) {
-            cycle++;
-            log(`[Loop] Cycle ${cycle}: Starting...`);
-
-            const clicked = await performClick(['button', '[class*="button"]', '[class*="anysphere"]']);
-            log(`[Loop] Cycle ${cycle}: Clicked ${clicked} buttons`);
-
-            await new Promise(r => setTimeout(r, 800));
-
-            // Try multiple selectors for Cursor tabs
-            const tabSelectors = [
-                '#workbench\\.parts\\.auxiliarybar ul[role="tablist"] li[role="tab"]',
-                '.monaco-pane-view .monaco-list-row[role="listitem"]',
-                'div[role="tablist"] div[role="tab"]',
-                '.chat-session-item' // Potential future-proof selector
-            ];
-
-            let tabs = [];
-            for (const selector of tabSelectors) {
-                tabs = queryAll(selector);
-                if (tabs.length > 0) {
-                    log(`[Loop] Cycle ${cycle}: Found ${tabs.length} tabs using selector: ${selector}`);
-                    break;
-                }
-            }
-
-            if (tabs.length === 0) {
-                log(`[Loop] Cycle ${cycle}: No tabs found in any known locations.`);
-            }
-
-            updateTabNames(tabs);
-
-            if (tabs.length > 0) {
-                const targetTab = tabs[index % tabs.length];
-                const tabLabel = targetTab.getAttribute('aria-label') || targetTab.textContent?.trim() || 'unnamed tab';
-                log(`[Loop] Cycle ${cycle}: Clicking tab "${tabLabel}"`);
-                targetTab.dispatchEvent(new MouseEvent('click', { view: window, bubbles: true, cancelable: true }));
-                index++;
-            }
-
-            const state = window.__autoAcceptState;
-            log(`[Loop] Cycle ${cycle}: State = { tabs: ${state.tabNames?.length || 0}, isRunning: ${state.isRunning}, sid: ${state.sessionID} }`);
-
-            updateOverlay();
-            log(`[Loop] Cycle ${cycle}: Overlay updated, waiting 3s...`);
-
-            await new Promise(r => setTimeout(r, 3000));
-        }
-        log('[Loop] cursorLoop STOPPED');
-    }
-
     async function antigravityLoop(sid) {
         log('[Loop] antigravityLoop STARTED');
         let index = 0;
@@ -845,14 +785,8 @@
             // Only click if there's NO completion badge (conversation is still working)
             let clicked = 0;
             if (!hasBadge) {
-                // Click accept/run buttons (Antigravity specific selectors with fallbacks)
-                const buttonSelectors = [
-                    '.bg-ide-button-background',    // Original Antigravity
-                    'button[class*="accept"]',      // Class contains accept
-                    'button[class*="primary"]',     // Primary buttons
-                    '.monaco-button.primary',       // Monaco primary button
-                ];
-                clicked = await performClick(buttonSelectors);
+                // Click accept/run buttons
+                clicked = await performClick(['button', '[class*="button"]']);
                 log(`[Loop] Cycle ${cycle}: Clicked ${clicked} accept buttons`);
             } else {
                 log(`[Loop] Cycle ${cycle}: Skipping clicks - conversation is DONE (has badge)`);
@@ -975,8 +909,6 @@
 
     window.__autoAcceptStart = function (config) {
         try {
-            const ide = (config.ide || 'cursor').toLowerCase();
-            const isPro = config.isPro !== false;
             const isBG = config.isBackgroundMode === true;
 
             // Update banned commands from config
@@ -984,12 +916,12 @@
                 window.__autoAcceptUpdateBannedCommands(config.bannedCommands);
             }
 
-            log(`__autoAcceptStart called: ide=${ide}, isPro=${isPro}, isBG=${isBG}`);
+            log(`__autoAcceptStart called: isBG=${isBG}`);
 
             const state = window.__autoAcceptState;
 
             // Skip restart only if EXACTLY the same config
-            if (state.isRunning && state.currentMode === ide && state.isBackgroundMode === isBG) {
+            if (state.isRunning && state.currentMode === 'antigravity' && state.isBackgroundMode === isBG) {
                 log(`Already running with same config, skipping`);
                 return;
             }
@@ -1001,7 +933,7 @@
             }
 
             state.isRunning = true;
-            state.currentMode = ide;
+            state.currentMode = 'antigravity';
             state.isBackgroundMode = isBG;
             state.sessionID++;
             const sid = state.sessionID;
@@ -1011,30 +943,18 @@
                 state.stats.sessionStartTime = Date.now();
             }
 
-            log(`Agent Loaded (IDE: ${ide}, BG: ${isBG}, isPro: ${isPro})`, true);
+            log(`Agent Loaded (BG: ${isBG})`, true);
 
-            if (isBG && isPro) {
+            if (isBG) {
                 log(`[BG] Creating overlay and starting loop...`);
                 showOverlay();
-                log(`[BG] Overlay created, starting ${ide} loop...`);
-                if (ide === 'cursor') cursorLoop(sid);
-                else antigravityLoop(sid);
-            } else if (isBG && !isPro) {
-                log(`[BG] Background mode requires Pro, showing overlay anyway...`);
-                showOverlay();
-                if (ide === 'cursor') cursorLoop(sid);
-                else antigravityLoop(sid);
+                antigravityLoop(sid);
             } else {
                 hideOverlay();
                 log(`Starting static poll loop...`);
                 (async function staticLoop() {
                     while (state.isRunning && state.sessionID === sid) {
-                        const selectors = (ide === 'antigravity')
-                            ? ['.bg-ide-button-background']
-                            : (ide === 'cursor')
-                                ? ['button', '[class*="button"]', '[class*="anysphere"]']
-                                : ['button'];
-                        performClick(selectors);
+                        performClick(['button', '[class*="button"]']);
                         await new Promise(r => setTimeout(r, config.pollInterval || 1000));
                     }
                 })();

@@ -71,16 +71,8 @@ class CDPHandler {
                 res.on('end', () => {
                     try {
                         const pages = JSON.parse(body);
-                        // Filter for workbench pages only (the main IDE window)
-                        const filtered = pages.filter(p =>
-                            p.webSocketDebuggerUrl &&
-                            (p.type === 'page' || p.type === 'webview') &&
-                            p.url && p.url.includes('workbench.html')
-                        );
-                        if (pages.length !== filtered.length) {
-                            this.log(`Port ${port}: filtered ${pages.length - filtered.length} non-workbench pages`);
-                        }
-                        resolve(filtered);
+                        // Filter for pages that look like IDE windows (usually type "page" or "background_page")
+                        resolve(pages.filter(p => p.webSocketDebuggerUrl && (p.type === 'page' || p.type === 'webview')));
                     } catch (e) { this.log(`Port ${port}: JSON parse error - ${e.message}`); resolve([]); }
                 });
             });
