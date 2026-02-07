@@ -733,13 +733,12 @@
         let clicked = 0;
         let verified = 0;
         const uniqueFound = [...new Set(found)];
-        const now = Date.now();
         const CLICK_COOLDOWN_MS = 5000; // Don't re-click the same button within 5 seconds
 
         for (const el of uniqueFound) {
             // Skip buttons we've already clicked recently (deduplication)
             const lastClicked = parseInt(el.getAttribute('data-auto-accept-clicked') || '0', 10);
-            if (lastClicked > 0 && (now - lastClicked) < CLICK_COOLDOWN_MS) {
+            if (lastClicked > 0 && (Date.now() - lastClicked) < CLICK_COOLDOWN_MS) {
                 continue; // Still in cooldown
             }
 
