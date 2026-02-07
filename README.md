@@ -1,4 +1,4 @@
-# Auto Accept (Personal) for Antigravity
+# Personal Accept (formerly Auto Accept) for Antigravity
 
 Keeps Antigravity conversations moving by automatically clicking approval buttons (file edits, terminal commands, retry/resume prompts) via Chrome DevTools Protocol (CDP).
 
@@ -14,7 +14,7 @@ Antigravity's multi-agent workflow is powerful, but it stops every time the agen
 
 **That's dozens of interruptions per hour.**
 
-Auto Accept eliminates the wait:
+Personal Accept eliminates the wait:
 - **File edits** — Auto-applied
 - **Terminal commands** — Auto-executed
 - **Retry prompts** — Auto-confirmed
@@ -56,7 +56,7 @@ This will:
 2. Build and install the .vsix extension into Antigravity
 3. Tell you to restart Antigravity
 
-After restarting, Auto Accept activates automatically. Check the status bar for `Personal Accept: ACTIVE`.
+After restarting, Personal Accept activates automatically. Check the status bar for `Personal Accept: ACTIVE`.
 
 ### Manual steps (if you prefer)
 
@@ -79,7 +79,7 @@ After restarting, Auto Accept activates automatically. Check the status bar for 
 
 ## Technical Architecture
 
-Auto Accept operates via a **CDP (Chrome DevTools Protocol) Bridge**:
+Personal Accept operates via a **CDP (Chrome DevTools Protocol) Bridge**:
 
 1. **Bridge Initiation**: The extension connects to the IDE's internal browser process on port `9000`.
 2. **Logic Injection**: It injects a specialized automation script (`full_cdp_script.js`) directly into the IDE's UI layer.

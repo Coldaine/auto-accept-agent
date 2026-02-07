@@ -1,12 +1,12 @@
 # launch-antigravity.ps1
 # Launches Antigravity (or Cursor) with Chrome DevTools Protocol (CDP) enabled
-# This is required for Auto Accept to work
+# This is required for Personal Accept to work
 #
 # Usage:
 #   .\launch-antigravity.ps1              # Launches Antigravity
 #   .\launch-antigravity.ps1 -IDE Cursor  # Launches Cursor instead
 #
-# Port: 9000 (default CDP port for Auto Accept)
+# Port: 9000 (default CDP port for Personal Accept)
 
 param(
     [ValidateSet("Antigravity", "Cursor", "Code")]
@@ -44,7 +44,7 @@ if (-not $exePath) {
 }
 
 Write-Host "============================================" -ForegroundColor Cyan
-Write-Host "  Auto Accept - CDP Launcher" -ForegroundColor Cyan
+Write-Host "  Personal Accept - CDP Launcher" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "IDE:  $IDE" -ForegroundColor Green
@@ -86,7 +86,7 @@ Write-Host "SUCCESS! $IDE launched with CDP on port $Port" -ForegroundColor Gree
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Cyan
 Write-Host "  1. Wait for $IDE to fully load" -ForegroundColor White
-Write-Host "  2. Click the Auto Accept status bar item to enable" -ForegroundColor White
+Write-Host "  2. Click the Personal Accept status bar item to enable" -ForegroundColor White
 Write-Host "  3. You should see 'Personal Accept: ACTIVE'" -ForegroundColor White
 Write-Host ""
 Write-Host "To verify CDP is working, run:" -ForegroundColor Yellow

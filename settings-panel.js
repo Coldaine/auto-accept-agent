@@ -17,7 +17,7 @@ class SettingsPanel {
 
         const panel = vscode.window.createWebviewPanel(
             SettingsPanel.viewType,
-            'Auto Accept Settings',
+            'Personal Accept Settings',
             column || vscode.ViewColumn.One,
             {
                 enableScripts: true,
@@ -158,7 +158,7 @@ class SettingsPanel {
 <style>${css}</style>
 </head>
 <body>
-  <h1>Auto Accept Settings</h1>
+  <h1>Personal Accept Settings</h1>
   <p class="sub">Local-only settings. No accounts, no licensing, no external links.</p>
 
   <div class="grid">

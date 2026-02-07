@@ -1,5 +1,5 @@
 # setup.ps1
-# One-shot setup for Auto Accept Agent in Antigravity IDE
+# One-shot setup for Personal Accept in Antigravity IDE
 # 1. Finds and patches all Antigravity shortcuts to enable CDP (--remote-debugging-port=9000)
 # 2. Builds the .vsix if needed
 # 3. Installs the extension into Antigravity
@@ -22,7 +22,7 @@ $CdpFlag = "--remote-debugging-port=$Port"
 
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Cyan
-Write-Host "  Auto Accept Agent - Setup" -ForegroundColor Cyan
+Write-Host "  Personal Accept - Setup" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
 

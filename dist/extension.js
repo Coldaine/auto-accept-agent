@@ -19,7 +19,7 @@ var require_settings_panel = __commonJS({
         }
         const panel = vscode2.window.createWebviewPanel(
           _SettingsPanel.viewType,
-          "Auto Accept Settings",
+          "Personal Accept Settings",
           column || vscode2.ViewColumn.One,
           {
             enableScripts: true,
@@ -148,7 +148,7 @@ var require_settings_panel = __commonJS({
 <style>${css}</style>
 </head>
 <body>
-  <h1>Auto Accept Settings</h1>
+  <h1>Personal Accept Settings</h1>
   <p class="sub">Local-only settings. No accounts, no licensing, no external links.</p>
 
   <div class="grid">
@@ -3972,14 +3972,25 @@ var require_cdp_handler = __commonJS({
             res.on("end", () => {
               try {
                 const pages = JSON.parse(body);
-                resolve(pages.filter((p) => p.webSocketDebuggerUrl && (p.type === "page" || p.type === "webview")));
+                const filtered = pages.filter(
+                  (p) => p.webSocketDebuggerUrl && (p.type === "page" || p.type === "webview") && p.url && p.url.includes("workbench.html")
+                );
+                if (pages.length !== filtered.length) {
+                  this.log(`Port ${port}: filtered ${pages.length - filtered.length} non-workbench pages`);
+                }
+                resolve(filtered);
               } catch (e) {
+                this.log(`Port ${port}: JSON parse error - ${e.message}`);
                 resolve([]);
               }
             });
           });
-          req.on("error", () => resolve([]));
+          req.on("error", (e) => {
+            this.log(`Port ${port}: request error - ${e.message}`);
+            resolve([]);
+          });
           req.on("timeout", () => {
+            this.log(`Port ${port}: request timeout`);
             req.destroy();
             resolve([]);
           });
@@ -3988,12 +3999,22 @@ var require_cdp_handler = __commonJS({
       async _connect(id, url) {
         return new Promise((resolve) => {
           const ws = new WebSocket(url);
+          const connectionTimeout = setTimeout(() => {
+            ws.terminate();
+            this.log(`Connection timeout for ${id}`);
+            resolve(false);
+          }, 5e3);
           ws.on("open", () => {
+            clearTimeout(connectionTimeout);
             this.connections.set(id, { ws, injected: false });
             this.log(`Connected to page ${id}`);
             resolve(true);
           });
-          ws.on("error", () => resolve(false));
+          ws.on("error", (err) => {
+            clearTimeout(connectionTimeout);
+            this.log(`Connection error for ${id}: ${err.message || "Unknown error"}`);
+            resolve(false);
+          });
           ws.on("close", () => {
             this.connections.delete(id);
             this.log(`Disconnected from page ${id}`);
@@ -4021,13 +4042,26 @@ var require_cdp_handler = __commonJS({
         if (!conn || conn.ws.readyState !== WebSocket.OPEN) return;
         return new Promise((resolve, reject) => {
           const currentId = this.msgId++;
-          const timeout = setTimeout(() => reject(new Error("CDP Timeout")), 2e3);
-          const onMessage = (data) => {
-            const msg = JSON.parse(data.toString());
-            if (msg.id === currentId) {
-              conn.ws.off("message", onMessage);
-              clearTimeout(timeout);
-              resolve(msg.result);
+          let onMessage;
+          const cleanup = () => {
+            clearTimeout(timeout);
+            if (onMessage) conn.ws.off("message", onMessage);
+          };
+          const timeout = setTimeout(() => {
+            cleanup();
+            reject(new Error("CDP Timeout"));
+          }, 2e3);
+          onMessage = (data) => {
+            try {
+              const msg = JSON.parse(data.toString());
+              if (msg.id === currentId) {
+                cleanup();
+                if (msg.result?.exceptionDetails) {
+                  this.log(`Evaluation error: ${msg.result.exceptionDetails.text || "Unknown"}`);
+                }
+                resolve(msg.result);
+              }
+            } catch (e) {
             }
           };
           conn.ws.on("message", onMessage);
@@ -4134,18 +4168,339 @@ var require_cdp_handler = __commonJS({
   }
 });
 
+// setup-panel.js
+var require_setup_panel = __commonJS({
+  "setup-panel.js"(exports2) {
+    var vscode2 = require("vscode");
+    var SetupPanel = class _SetupPanel {
+      static currentPanel = void 0;
+      static createOrShow(extensionUri, script, platform, ideName) {
+        const column = vscode2.ViewColumn.One;
+        if (_SetupPanel.currentPanel) {
+          _SetupPanel.currentPanel._panel.reveal(column);
+          _SetupPanel.currentPanel._update(script, platform, ideName);
+          return;
+        }
+        const panel = vscode2.window.createWebviewPanel(
+          "autoAcceptSetup",
+          "Personal Accept Setup",
+          column,
+          {
+            enableScripts: true,
+            retainContextWhenHidden: true,
+            localResourceRoots: [vscode2.Uri.joinPath(extensionUri, "media"), extensionUri]
+          }
+        );
+        _SetupPanel.currentPanel = new _SetupPanel(panel, extensionUri, script, platform, ideName);
+      }
+      constructor(panel, extensionUri, script, platform, ideName) {
+        this._panel = panel;
+        this._extensionUri = extensionUri;
+        this._script = script;
+        this._platform = platform;
+        this._ideName = ideName;
+        this._disposables = [];
+        this._update(script, platform, ideName);
+        this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+        this._panel.webview.onDidReceiveMessage(
+          (message) => {
+            switch (message.command) {
+              case "copyScript":
+                vscode2.env.clipboard.writeText(this._script);
+                vscode2.window.showInformationMessage("\u2705 Script copied to clipboard!");
+                return;
+              case "openHelp":
+                vscode2.env.openExternal(vscode2.Uri.parse("https://github.com/Coldaine/auto-accept-agent/blob/master/SETUP_GUIDE.md"));
+                return;
+            }
+          },
+          null,
+          this._disposables
+        );
+      }
+      _update(script, platform, ideName) {
+        this._script = script;
+        this._platform = platform;
+        this._ideName = ideName;
+        this._panel.webview.html = this._getHtmlContent(script, platform, ideName);
+      }
+      _getHtmlContent(script, platform, ideName) {
+        const terminalName = platform === "win32" ? "PowerShell (as Administrator)" : "Terminal";
+        const iconUri = this._panel.webview.asWebviewUri(
+          vscode2.Uri.joinPath(this._extensionUri, "media", "icon.png")
+        );
+        return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personal Accept Setup</title>
+    <style>
+        :root {
+            --bg: #0a0a0c;
+            --card-bg: #121216;
+            --border: rgba(147, 51, 234, 0.2);
+            --border-hover: rgba(147, 51, 234, 0.4);
+            --accent: #9333ea;
+            --accent-soft: rgba(147, 51, 234, 0.1);
+            --fg: #ffffff;
+            --fg-dim: rgba(255, 255, 255, 0.6);
+            --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--fg);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 500px;
+            width: 100%;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .icon-img {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 16px;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            font-weight: 800;
+            margin-bottom: 8px;
+            letter-spacing: -0.5px;
+        }
+
+        .subtitle {
+            color: var(--fg-dim);
+            font-size: 14px;
+        }
+
+        .section {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 16px;
+            transition: border-color 0.3s ease;
+        }
+
+        .section:hover {
+            border-color: var(--border-hover);
+        }
+
+        .step {
+            display: flex;
+            align-items: start; gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .step:last-child {
+            margin-bottom: 0;
+        }
+
+        .step-number {
+            background: var(--accent);
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            flex-shrink: 0;
+            font-size: 16px;
+        }
+
+        .step-content {
+            flex: 1;
+            padding-top: 2px;
+        }
+
+        .step-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+            font-size: 15px;
+        }
+
+        .step-description {
+            color: var(--fg-dim);
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .btn-copy {
+            width: 100%;
+            padding: 16px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .btn-copy:hover {
+            background: #a855f7;
+            transform: translateY(-1px);
+        }
+
+        .btn-copy:active {
+            transform: translateY(0);
+        }
+
+        .warning {
+            background: var(--accent-soft);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-size: 13px;
+            color: var(--fg-dim);
+            line-height: 1.5;
+        }
+
+        .warning strong {
+            color: var(--fg);
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .help-link {
+            text-align: center;
+            margin-top: 16px;
+        }
+
+        .help-link a {
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .help-link a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="${iconUri}" alt="Icon" class="icon-img">
+            <h1>Setup Required</h1>
+            <p class="subtitle">Enable Chrome DevTools Protocol for ${this._escapeHtml(ideName)}</p>
+        </div>
+
+        <div class="section">
+            <div class="step">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                    <div class="step-title">Copy Setup Script</div>
+                    <div class="step-description">Click the button to copy the script to your clipboard</div>
+                    <button class="btn-copy" onclick="copyScript()">
+                        \u{1F4CB} Copy Setup Script
+                    </button>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                    <div class="step-title">Run in ${this._escapeHtml(terminalName)}</div>
+                    <div class="step-description">Paste and execute the script in ${this._escapeHtml(terminalName)}</div>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                    <div class="step-title">Restart ${this._escapeHtml(ideName)}</div>
+                    <div class="step-description">Completely close and restart ${this._escapeHtml(ideName)} for changes to take effect</div>
+                </div>
+            </div>
+        </div>
+
+        ${platform === "win32" ? `
+        <div class="warning">
+            <strong>\u26A0\uFE0F Windows Users</strong>
+            Right-click PowerShell and select "Run as Administrator" before pasting the script.
+        </div>
+        ` : ""}
+
+        <div class="help-link">
+            <a href="#" onclick="openHelp(); return false;">Need help? View setup guide \u2192</a>
+        </div>
+    </div>
+
+    <script>
+        const vscode = acquireVsCodeApi();
+
+        function copyScript() {
+            vscode.postMessage({ command: 'copyScript' });
+        }
+
+        function openHelp() {
+            vscode.postMessage({ command: 'openHelp' });
+        }
+    </script>
+</body>
+</html>`;
+      }
+      _escapeHtml(text) {
+        return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+      }
+      dispose() {
+        _SetupPanel.currentPanel = void 0;
+        this._panel.dispose();
+        while (this._disposables.length) {
+          const disposable = this._disposables.pop();
+          if (disposable) {
+            disposable.dispose();
+          }
+        }
+      }
+    };
+    exports2.SetupPanel = SetupPanel;
+  }
+});
+
 // main_scripts/relauncher.js
 var require_relauncher = __commonJS({
   "main_scripts/relauncher.js"(exports2, module2) {
     var vscode2 = require("vscode");
-    var { execSync, spawn } = require("child_process");
     var os = require("os");
     var fs = require("fs");
     var path2 = require("path");
+    var { SetupPanel } = require_setup_panel();
     var CDP_PORT = 9e3;
     var CDP_FLAG = `--remote-debugging-port=${CDP_PORT}`;
     var Relauncher = class {
-      constructor(logger = console.log) {
+      constructor(context, logger = console.log) {
+        this.context = context;
         this.platform = os.platform();
         this.logger = logger;
       }
@@ -4176,32 +4531,32 @@ var require_relauncher = __commonJS({
         const { script, instructions } = await this.getPlatformScriptAndInstructions();
         if (!script) {
           vscode2.window.showErrorMessage(
-            `Auto Accept: Unsupported platform. Please add --remote-debugging-port=9000 to your ${ideName} shortcut manually, then restart.`,
+            `Personal Accept: Unsupported platform. Please add --remote-debugging-port=9000 to your ${ideName} shortcut manually, then restart.`,
             "View Help"
-          ).then((selection2) => {
-            if (selection2 === "View Help") {
-              vscode2.env.openExternal(vscode2.Uri.parse("https://github.com/Antigravity-AI/auto-accept#background-mode-setup"));
+          ).then((selection) => {
+            if (selection === "View Help") {
+              vscode2.env.openExternal(vscode2.Uri.parse("https://github.com/Coldaine/auto-accept-agent#quick-start-windows"));
             }
           });
           return { success: false, relaunched: false };
         }
-        const message = `Auto Accept: CDP flag missing. To enable Background Mode, please run the script for ${ideName} on ${this.platform}.`;
-        const copyButton = "Copy Script to Clipboard";
-        const viewHelpButton = "View Help";
-        const selection = await vscode2.window.showInformationMessage(
-          message,
-          { modal: true, detail: `${instructions}
+        if (this.context) {
+          SetupPanel.createOrShow(this.context.extensionUri, script, this.platform, ideName);
+        } else {
+          const message = `Personal Accept: CDP flag missing. To enable Background Mode, please run the script for ${ideName} on ${this.platform}.`;
+          const copyButton = "Copy Script to Clipboard";
+          const selection = await vscode2.window.showInformationMessage(
+            message,
+            { modal: true, detail: `${instructions}
 
 Script:
 ${script}` },
-          copyButton,
-          viewHelpButton
-        );
-        if (selection === copyButton) {
-          await vscode2.env.clipboard.writeText(script);
-          vscode2.window.showInformationMessage("Script copied to clipboard! Please paste it into a terminal and run it, then close and restart your IDE.");
-        } else if (selection === viewHelpButton) {
-          vscode2.env.openExternal(vscode2.Uri.parse("https://github.com/Antigravity-AI/auto-accept#background-mode-setup"));
+            copyButton
+          );
+          if (selection === copyButton) {
+            await vscode2.env.clipboard.writeText(script);
+            vscode2.window.showInformationMessage("Script copied to clipboard! Please paste it into a terminal and run it, then close and restart your IDE.");
+          }
         }
         return { success: true, relaunched: false };
       }
@@ -4220,11 +4575,27 @@ ${script}` },
         const platform = this.platform;
         if (platform === "win32") {
           const script = `$WshShell = New-Object -ComObject WScript.Shell
-$DesktopPath = [System.IO.Path]::Combine($env:USERPROFILE, "Desktop")
-$Shortcuts = Get-ChildItem "$DesktopPath\\*.lnk" | Where-Object { $_.Name -like "*${ideName}*" }
+$SearchPaths = @(
+    [System.IO.Path]::Combine($env:USERPROFILE, "Desktop"),
+    [System.IO.Path]::Combine($env:USERPROFILE, "OneDrive", "Desktop"),
+    [System.IO.Path]::Combine($env:APPDATA, "Microsoft", "Windows", "Start Menu", "Programs"),
+    [System.IO.Path]::Combine($env:APPDATA, "Microsoft", "Internet Explorer", "Quick Launch", "User Pinned", "TaskBar")
+)
 
-if ($Shortcuts.Count -eq 0) {
-    Write-Host "No ${ideName} shortcut found on Desktop. Creating a new one..." -ForegroundColor Yellow
+$AllShortcuts = @()
+foreach ($SearchPath in $SearchPaths) {
+    if (Test-Path $SearchPath) {
+        $Found = Get-ChildItem "$SearchPath\\*.lnk" -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*${ideName}*" }
+        if ($Found) {
+            $AllShortcuts += $Found
+            Write-Host "Found shortcut(s) in: $SearchPath" -ForegroundColor Cyan
+        }
+    }
+}
+
+if ($AllShortcuts.Count -eq 0) {
+    Write-Host "No ${ideName} shortcut found. Creating one on Desktop..." -ForegroundColor Yellow
+    $DesktopPath = [System.IO.Path]::Combine($env:USERPROFILE, "Desktop")
     $ShortcutPath = "$DesktopPath\\${ideName}.lnk"
     $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
     $Shortcut.TargetPath = "$env:LOCALAPPDATA\\Programs\\${ideName}\\${ideName}.exe"
@@ -4232,7 +4603,7 @@ if ($Shortcuts.Count -eq 0) {
     $Shortcut.Save()
     Write-Host "Created new shortcut: $ShortcutPath" -ForegroundColor Green
 } else {
-    foreach ($ShortcutFile in $Shortcuts) {
+    foreach ($ShortcutFile in $AllShortcuts) {
         $Shortcut = $WshShell.CreateShortcut($ShortcutFile.FullName)
         $Args = $Shortcut.Arguments
         if ($Args -match "--remote-debugging-port=\\d+") {
@@ -4390,7 +4761,7 @@ function detectIDE() {
 }
 async function activate(context) {
   globalContext = context;
-  console.log("Auto Accept Extension: Activator called.");
+  console.log("Personal Accept Extension: Activator called.");
   try {
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     statusBarItem.command = "auto-accept.toggle";
@@ -4450,17 +4821,25 @@ async function activate(context) {
       const { CDPHandler } = require_cdp_handler();
       const { Relauncher } = require_relauncher();
       cdpHandler = new CDPHandler(log);
-      relauncher = new Relauncher(log);
+      relauncher = new Relauncher(context, log);
       log(`CDP handlers initialized for ${currentIDE}.`);
     } catch (err) {
       log(`Failed to initialize CDP handlers: ${err.message}`);
-      vscode.window.showErrorMessage(`Auto Accept Error: ${err.message}`);
+      vscode.window.showErrorMessage(`Personal Accept Error: ${err.message}`);
     }
     updateStatusBar();
     log("Status bar updated with current state.");
     context.subscriptions.push(
       vscode.commands.registerCommand("auto-accept.toggle", () => handleToggle(context)),
       vscode.commands.registerCommand("auto-accept.relaunch", () => handleRelaunch()),
+      vscode.commands.registerCommand("auto-accept.showSetupPanel", async () => {
+        if (relauncher) {
+          const { script } = await relauncher.getPlatformScriptAndInstructions();
+          const ideName = relauncher.getIdeName();
+          const { SetupPanel } = require_setup_panel();
+          SetupPanel.createOrShow(context.extensionUri, script, process.platform, ideName);
+        }
+      }),
       vscode.commands.registerCommand("auto-accept.updateFrequency", (freq) => handleFrequencyUpdate(context, freq)),
       vscode.commands.registerCommand("auto-accept.toggleBackground", () => handleBackgroundToggle(context)),
       vscode.commands.registerCommand("auto-accept.updateBannedCommands", (commands) => handleBannedCommandsUpdate(context, commands)),
@@ -4494,7 +4873,7 @@ async function activate(context) {
   } catch (error) {
     console.error("ACTIVATION CRITICAL FAILURE:", error);
     log(`ACTIVATION CRITICAL FAILURE: ${error.message}`);
-    vscode.window.showErrorMessage(`Auto Accept Extension failed to activate: ${error.message}`);
+    vscode.window.showErrorMessage(`Personal Accept Extension failed to activate: ${error.message}`);
   }
 }
 async function ensureCDPOrPrompt(showPrompt = false) {
@@ -4505,21 +4884,33 @@ async function ensureCDPOrPrompt(showPrompt = false) {
   if (cdpAvailable) {
     log("CDP is active and available.");
     return true;
-  } else {
-    log("CDP not found on target ports (9000 +/- 3).");
-    if (showPrompt && relauncher) {
-      log("Initiating CDP setup flow...");
-      await relauncher.ensureCDPAndRelaunch();
+  }
+  const hasFlag = process.argv.some((arg) => arg.includes("--remote-debugging-port"));
+  if (hasFlag) {
+    log("CDP flag present in process.argv but port not responding. Prompting restart.");
+    const selection = await vscode.window.showWarningMessage(
+      "Personal Accept: CDP port is not responding. The IDE was launched with the correct flag but the debug port appears inactive. A restart usually fixes this.",
+      "Restart Now",
+      "Dismiss"
+    );
+    if (selection === "Restart Now") {
+      await vscode.commands.executeCommand("workbench.action.reloadWindow");
     }
     return false;
   }
+  log("CDP not found on target ports (9000 +/- 3).");
+  if (showPrompt && relauncher) {
+    log("Initiating CDP setup flow...");
+    await relauncher.ensureCDPAndRelaunch();
+  }
+  return false;
 }
 async function checkEnvironmentAndStart() {
   if (isEnabled) {
-    log("Initializing Auto Accept environment...");
+    log("Initializing Personal Accept environment...");
     const cdpReady = await ensureCDPOrPrompt(false);
     if (!cdpReady) {
-      log("Auto Accept was enabled but CDP is not available. Resetting to OFF state.");
+      log("Personal Accept was enabled but CDP is not available. Resetting to OFF state.");
       isEnabled = false;
       await globalContext.globalState.update(GLOBAL_STATE_KEY, false);
     } else {
@@ -4535,7 +4926,7 @@ async function handleToggle(context) {
   try {
     const cdpAvailable = cdpHandler ? await cdpHandler.isCDPAvailable() : false;
     if (!isEnabled && !cdpAvailable && relauncher) {
-      log("Auto Accept: CDP not available. Prompting for setup/relaunch.");
+      log("Personal Accept: CDP not available. Prompting for setup/relaunch.");
       await relauncher.ensureCDPAndRelaunch();
       return;
     }
@@ -4546,12 +4937,12 @@ async function handleToggle(context) {
     log("  Calling updateStatusBar...");
     updateStatusBar();
     if (isEnabled) {
-      log("Auto Accept: Enabled");
+      log("Personal Accept: Enabled");
       ensureCDPOrPrompt(true).then(() => startPolling());
       startStatsCollection(context);
       incrementSessionCount(context);
     } else {
-      log("Auto Accept: Disabled");
+      log("Personal Accept: Disabled");
       if (cdpHandler) {
         cdpHandler.getSessionSummary().then((summary) => showSessionSummaryNotification(context, summary)).catch(() => {
         });
@@ -4599,7 +4990,7 @@ async function handleBackgroundToggle(context) {
   const dontShowAgain = context.globalState.get(BACKGROUND_DONT_SHOW_KEY, false);
   if (!dontShowAgain && !backgroundModeEnabled) {
     const choice = await vscode.window.showInformationMessage(
-      "Turn on Background Mode?\n\nThis lets Auto Accept work on all your open chats at once. It will switch between tabs to click Accept for you.\n\nYou might see tabs change quickly while it works.",
+      "Turn on Background Mode?\n\nThis lets Personal Accept work on all your open chats at once. It will switch between tabs to click Accept for you.\n\nYou might see tabs change quickly while it works.",
       { modal: true },
       "Enable",
       "Don't Show Again & Enable",
@@ -4649,7 +5040,7 @@ async function syncSessions() {
 }
 async function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
-  log("Auto Accept: Monitoring session...");
+  log("Personal Accept: Monitoring session...");
   await syncSessions();
   pollTimer = setInterval(async () => {
     if (!isEnabled) return;
@@ -4667,8 +5058,8 @@ async function startPolling() {
         return;
       }
     }
-    globalContext.globalState.update(lockKey, myId);
-    globalContext.globalState.update(`${lockKey}-ping`, Date.now());
+    await globalContext.globalState.update(lockKey, myId);
+    await globalContext.globalState.update(`${lockKey}-ping`, Date.now());
     if (isLockedOut) {
       log("CDP Control: Lock acquired. Resuming control.");
       isLockedOut = false;
@@ -4687,7 +5078,7 @@ async function stopPolling() {
     statsCollectionTimer = null;
   }
   if (cdpHandler) await cdpHandler.stop();
-  log("Auto Accept: Polling stopped");
+  log("Personal Accept: Polling stopped");
 }
 function getWeekStart() {
   const now = /* @__PURE__ */ new Date();
@@ -4795,7 +5186,6 @@ async function showAwayActionsNotification(context, actionsCount) {
     }
   });
 }
-var lastAwayCheck = Date.now();
 async function checkForAwayActions(context) {
   log(`[Away] checkForAwayActions called. cdpHandler=${!!cdpHandler}, isEnabled=${isEnabled}`);
   if (!cdpHandler || !isEnabled) {
@@ -4851,7 +5241,7 @@ function updateStatusBar() {
   if (isEnabled) {
     let statusText = "ACTIVE";
     let tooltip = `Personal Accept is running.`;
-    let bgColor = void 0;
+    let bgColor = "#00d9ff";
     let icon = "$(pass-filled)";
     const cdpConnected = cdpHandler && cdpHandler.getConnectionCount() > 0;
     if (cdpConnected) {
@@ -4890,7 +5280,7 @@ function updateStatusBar() {
 async function showVersionNotification(context) {
   const hasShown8_6 = context.globalState.get(VERSION_8_6_0_KEY, false);
   if (!hasShown8_6) {
-    const title2 = "\u{1F680} What's new in Auto Accept 8.6.0";
+    const title2 = "\u{1F680} What's new in Personal Accept 8.6.0";
     const body2 = `Simpler setup. More control.
 
 \u2705 Manual CDP Setup \u2014 Platform-specific scripts give you full control over shortcut configuration
@@ -4901,7 +5291,7 @@ async function showVersionNotification(context) {
 
 \u{1F6E1}\uFE0F Enhanced Security \u2014 No automatic file modification, you run scripts when ready
 
-\u26A1 Same Great Features \u2014 All the Auto Accept functionality you love, now with clearer setup`;
+\u26A1 Same Great Features \u2014 All the Personal Accept functionality you love, now with clearer setup`;
     const btnDashboard2 = "View Dashboard";
     const btnGotIt2 = "Got it";
     await context.globalState.update(VERSION_8_6_0_KEY, true);
@@ -4921,12 +5311,12 @@ ${body2}`,
   }
   const hasShown7_0 = context.globalState.get(VERSION_7_0_KEY, false);
   if (hasShown7_0) return;
-  const title = "\u{1F680} What's new in Auto Accept 7.0";
+  const title = "\u{1F680} What's new in Personal Accept 7.0";
   const body = `Smarter. Faster. More reliable.
 
 \u2705 Smart Away Notifications \u2014 Get notified only when actions happened while you were truly away.
 
-\u{1F4CA} Session Insights \u2014 See exactly what happened when you turn off Auto Accept: file edits, terminal commands, and blocked interruptions.
+\u{1F4CA} Session Insights \u2014 See exactly what happened when you turn off Personal Accept: file edits, terminal commands, and blocked interruptions.
 
 \u26A1 Improved Background Mode \u2014 Faster, more reliable multi-chat handling.
 
